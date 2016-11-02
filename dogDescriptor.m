@@ -1,28 +1,29 @@
-function dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt)
-%GENDESCTIPTOR returns difference of gaussian Descriptors 
-% 
-% [OUTPUTARGS] = DOGDESCTIPTOR(INPUTARGS) 
+function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt)
+%GENDESCTIPTOR returns difference of gaussian Descriptors
+%
+% [OUTPUTARGS] = DOGDESCTIPTOR(INPUTARGS)
 %   dog = gauss1(sig1)-gauss2(sig1) : difference kernel
 %   out = input*dog : convolution
 %   out > max(out)/rt : only keep signal > ratio threshold
 %   out : [x-y-z-I] : spatial location and intensity at that location
-% 
-% Inputs: 
+%
+% Inputs:
 %   inputimage: input file can be tif or h5
 %   siz: gaussian kernel width
 %   sig1: scale of first gaussian
 %   sig2: scale of secong gaussian
 %   ROI: reject anything outside of BoundingBox
 %   rt: threshold ratio
-% 
-% Outputs: 
+%
+% Outputs:
 %   outputfile: text file that has x-y-z-I values as row vectors
-% 
-% Examples: 
+%   des: [Nx4]: x-y-z-I row vector
+%
+% Examples:
 %   dogDescriptor('/nobackup2/mouselight/cluster/2016-09-25/classifier_output/2016-10-02/00/00314/00314-prob.0.h5',...
 %   '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-09-25/Descriptors/13844-prob.0.txt',...
 %   '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
-% 
+%
 % See also: zmatch.m
 
 % $Author: base $	$Date: 2016/09/20 14:30:14 $	$Revision: 0.1 $
@@ -53,8 +54,6 @@ sig = sig1;
 h = exp(-(x.*x/2/sig(1)^2 + y.*y/2/sig(2)^2 + z.*z/2/sig(3)^2));
 gauss1 = h/sum(h(:));
 
-% sig2 = 3.4055002;
-% sig = sig2*ones(1,3);
 sig = sig2;
 [x,y,z] = ndgrid(-siz(1):siz(1),-siz(2):siz(2),-siz(3):siz(3));
 h = exp(-(x.*x/2/sig(1)^2 + y.*y/2/sig(2)^2 + z.*z/2/sig(3)^2));
@@ -69,7 +68,7 @@ It = ifftn(It.*fftdog);
 It = real(It);
 fprintf('Convolution of %s in %f sec\n',inputimage,toc(tcon))
 
-st = (size(dog)+1)/2+1; 
+st = (size(dog)+1)/2+1;
 ed = st+dims-1;
 It = It(st(1):ed(1),st(2):ed(2),st(3):ed(3)); % crop
 It(It<max(It(:))/rt)=0;
@@ -105,24 +104,28 @@ des = [xx(:),yy(:),zz(:)];
 des = des(validinds,:);
 vals = (It(sub2ind(size(It),des(:,2),des(:,1),des(:,3))));
 des = [des vals]';
-%% return uniform sampling over spatial domain
 
-
+%% TODO: return uniform sampling over spatial domain
 %%
-fid = fopen(outputfile,'w');
-fprintf(fid,'%d %d %d %f\n',des);
-fclose(fid);
+if ~isempty(outputfile)
+    fid = fopen(outputfile,'w');
+    fprintf(fid,'%d %d %d %f\n',des);
+    fclose(fid);
+end
+if nargout<1
+    des = [];
+end
 end
 
 function [Iout] = deployedtiffread(fileName,slices)
 %DEPLOYEDTIFFREAD Summary of this function goes here
-% 
+%
 % [OUTPUTARGS] = DEPLOYEDTIFFREAD(INPUTARGS) Explain usage here
-% 
-% Examples: 
-% 
+%
+% Examples:
+%
 % Provide sample usage code here
-% 
+%
 % See also: List related files here
 
 % $Author: base $	$Date: 2015/08/21 12:26:16 $	$Revision: 0.1 $
@@ -145,12 +148,11 @@ end
 
 function deployment()
 %%
-% mcc -m -R -nojvm -v pointMatch.m -d /groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/compiledfunctions/pointMatch  -a ./common -a ./thirdparty
-% mcc -m -v -R -singleCompThread /groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/functions/dogDescriptor.m -d /groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/compiledfunctions/dogDescriptor
+% mcc -m -v -R -singleCompThread /groups/mousebrainmicro/home/base/CODE/MATLAB/descriptors/dogDescriptor.m -d /groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/compiledfunctions/dogDescriptor
 % totest from matlab window:
 % sigma1 = 3.4055002;
 % sigma2 = 4.0498447;
-% 
+%
 % dogDescriptor('/nobackup2/mouselight/cluster/2016-07-18/classifier_output/2016-07-24/01/01063/01063-ngc.0-Probability-2.h5',...
 %     '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/160404vs3/Descriptors/00001-ngc.0-Probabilitytxt',...
 %     '[11 11 11]',...
@@ -158,11 +160,12 @@ function deployment()
 %     sprintf('[%f %f %f]',[4.049845 4.049845 4.049845]),...
 %     '[50 974 50 1486 10 241]',...
 %         '4');
+%%% mcc -m -R -nojvm -v pointMatch.m -d /groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/compiledfunctions/pointMatch  -a ./common -a ./thirdparty
 dogDescriptor('/nobackup2/mouselight/cluster/2016-09-25/classifier_output/2016-10-02/00/00314/00314-prob.0.h5',...
-'/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-09-25/Descriptors/13844-prob.0.txt',...
-'[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
+    '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-09-25/Descriptors/13844-prob.0.txt',...
+    '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
 %%
- 
+
 addpath(genpath('./common'))
 brain = '2016-09-25';
 if 1
@@ -194,11 +197,15 @@ numcores = 3;
 pre = 'prob'
 rt = 4;
 myfile = sprintf('dogdescriptorrun_%s_run3.sh',brain);
-compiledfunc = '/groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/compiledfunctions/dogDescriptor/dogDescriptor'
+compiledfunc = '/groups/mousebrainmicro/home/base/CODE/MATLAB/compiledfunctions/dogDescriptor/dogDescriptor'
+if 1
+    %mcc -m -v -R -singleCompThread /groups/mousebrainmicro/home/base/CODE/MATLAB/descriptors/dogDescriptor.m -d /groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/compiledfunctions/dogDescriptor
+    sprintf('mcc -m -v -R -singleCompThread ./dogDescriptor.m -d %s',fileparts(compiledfunc))
+end
 
 %find number of random characters to choose from
 s = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-numRands = length(s); 
+numRands = length(s);
 %specify length of random string to generate
 sLength = 10;
 ROI = [5 1024-5 5 1536-5 10 251-1];
