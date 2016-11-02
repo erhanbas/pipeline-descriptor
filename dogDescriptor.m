@@ -200,6 +200,7 @@ myfile = sprintf('dogdescriptorrun_%s_run3.sh',brain);
 compiledfunc = '/groups/mousebrainmicro/home/base/CODE/MATLAB/compiledfunctions/dogDescriptor/dogDescriptor'
 if 1
     %mcc -m -v -R -singleCompThread /groups/mousebrainmicro/home/base/CODE/MATLAB/descriptors/dogDescriptor.m -d /groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/compiledfunctions/dogDescriptor
+    mkdir(fileparts(compiledfunc))
     sprintf('mcc -m -v -R -singleCompThread ./dogDescriptor.m -d %s',fileparts(compiledfunc))
 end
 
