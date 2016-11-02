@@ -71,7 +71,10 @@ fprintf('Convolution of %s in %f sec\n',inputimage,toc(tcon))
 st = (size(dog)+1)/2+1;
 ed = st+dims-1;
 It = It(st(1):ed(1),st(2):ed(2),st(3):ed(3)); % crop
-It(It<max(It(:))/rt)=0;
+%%
+maxIt = max(max(max(It,[],3),[],2));
+% It(It<(max(It(:))/rt))=0; % slow
+It = It.*(It>=(maxIt/rt));
 
 %%
 tloc = tic;
