@@ -35,6 +35,21 @@ if strcmp(fileext,'.h5')
 else
     It = deployedtiffread(inputimage);
 end
+%% normalization factor
+if isa(It,'uint16')
+    normfac = 2^16-1;
+elseif isa(It,'uint8')
+    normfac = 2^8-1;
+else
+    maxIt = max(max(max(It,[],3),[],2));
+    if maxIt>1
+        normfac = 2^16-1;
+    else
+        normfac = 1;
+    end
+end
+
+%%
 fprintf('Read %s in %f sec\n',inputimage,toc(tload))
 dims = size(It);
 sig1 = eval(sig1);
@@ -106,7 +121,7 @@ validinds = xx>=ROI(1)&xx<=ROI(2)&yy>=ROI(3)&yy<=ROI(4)&zz>=ROI(5)&zz<=ROI(6);
 des = [xx(:),yy(:),zz(:)];
 des = des(validinds,:);
 vals = (It(sub2ind(size(It),des(:,2),des(:,1),des(:,3))));
-des = [des vals]';
+des = [des vals/normfac]';
 
 %% TODO: return uniform sampling over spatial domain
 %%
