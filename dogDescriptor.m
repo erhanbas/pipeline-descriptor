@@ -1,4 +1,4 @@
-function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt)
+function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,withpadding)
 %GENDESCTIPTOR returns difference of gaussian Descriptors
 %
 % [OUTPUTARGS] = DOGDESCTIPTOR(INPUTARGS)
@@ -14,6 +14,9 @@ function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt)
 %   sig2: scale of secong gaussian
 %   ROI: reject anything outside of BoundingBox
 %   rt: threshold ratio
+%   withpadding: [1: default]: flag to pre/post pad [siz] size image with
+%           mirroring or not. Useful to get rid of edge artifacts on the
+%           image
 %
 % Outputs:
 %   outputfile: text file that has x-y-z-I values as row vectors
@@ -28,6 +31,9 @@ function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt)
 
 % $Author: base $	$Date: 2016/09/20 14:30:14 $	$Revision: 0.1 $
 % Copyright: HHMI 2016
+if nargin < 8
+    withpadding = 1;
+end
 tload=tic;
 [~,~,fileext] = fileparts(inputimage);
 if strcmp(fileext,'.h5')
@@ -60,6 +66,11 @@ sig = sig2;
 h = exp(-(x.*x/2/sig(1)^2 + y.*y/2/sig(2)^2 + z.*z/2/sig(3)^2));
 gauss2 = h/sum(h(:));
 dog = gauss1 - gauss2;
+%%
+% padarrays
+if withpadding
+    It = padarray(It,siz(1)*ones(1,3),'symmetric','both');
+end
 
 outsiz = size(It)+size(dog);%2.^nextpow2(size(It)+size(dog));
 tcon = tic;
@@ -69,10 +80,14 @@ It = ifftn(It.*fftdog);
 It = real(It);
 fprintf('Convolution of %s in %f sec\n',inputimage,toc(tcon))
 
-st = (size(dog)+1)/2+1;
+if withpadding
+    st = siz(1)+(size(dog)+1)/2+1;
+else
+    st = (size(dog)+1)/2+1;
+end
 ed = st+dims-1;
 It = It(st(1):ed(1),st(2):ed(2),st(3):ed(3)); % crop. Shifted -1 to make indicies 0 based
-%% normalization factor
+%% normalization factor % THIS IS BUGGY: convolution always return double, never get into first two conditions
 if isa(It,'uint16')
     normfac = 2^16-1;
 elseif isa(It,'uint8')
@@ -91,7 +106,7 @@ normfac = normfac*sum(dog(dog>0)); % max posible filter result will be at trunca
 maxIt = max(max(max(It,[],3),[],2));
 if 1
     %thr = graythresh(It/maxIt)*maxIt;
-    thr = getThresh(It);
+    thr = min(maxIt*7/10, max(maxIt/10,getThresh(It(It>maxIt/20)))); % make sure it is within [0.1 0.9]*maxIt range
 else
     thr = maxIt/rt;
 end
@@ -109,6 +124,10 @@ else
         bb = s(ii).BoundingBox;
         st = bb([2 1 3])+.5;
         en = st+bb([5 4 6])-1;
+        if any(bb([5 4 6])<[3 3 3])
+            bb([5 4 6])
+            continue
+        end
         It_ = It(st(1):en(1),st(2):en(2),st(3):en(3));
         %     figure, imshow3D(It_)
         immax = imregionalmax(It_.*double(It_>0));
@@ -126,7 +145,7 @@ fprintf('Local maxima of %s in %f sec\n',inputimage,toc(tloc))
 validinds = xx>=ROI(1)&xx<=ROI(2)&yy>=ROI(3)&yy<=ROI(4)&zz>=ROI(5)&zz<=ROI(6);
 loc = [xx(:),yy(:),zz(:)];
 loc = loc(validinds,:);
-desvals = double(It(sub2ind(size(It),loc(:,2),loc(:,1),loc(:,3))));
+desvals = double(It(sub2ind(size(It),loc(:,2),loc(:,1),loc(:,3)))); % descriptors are "0" indexed
 %%
 % reload input image
 if strcmp(fileext,'.h5')
@@ -207,6 +226,89 @@ if nargout<1
     des = [];
 end
 end
+function [threshold,x1,x2,maxarg,vals,bins] = getThresh(In,nbins,perc)
+%GETTHRESH finds the binary threshold based on histogram maximal distance
+% 
+% [OUTPUTARGS] = GETTHRESH(INPUTARGS) Explain usage here
+% 
+% Examples: 
+% 
+% Provide sample usage code here
+% 
+% See also: List related files here
+
+% $Author: base $	$Date: 2015/08/19 10:37:18 $	$Revision: 0.1 $
+% Copyright: HHMI 2015
+%%
+if nargin<2
+    nbins = 256;
+    perc = 0;
+elseif nargin<3
+    perc=0;
+end
+[vals,bins] = hist(double(In(:)),nbins);
+
+[x12,locmax] = max(vals);
+
+% below works better if there are multiple peaks (dark pixel and background have different peaks)
+% append 0 to both sides
+xleft = [0 vals(1:end-1)];
+xright = [vals(2:end) 0];
+maximas = find(vals(1:nbins/2)>xleft(1:nbins/2) &vals(1:nbins/2)>xright(1:nbins/2) & vals(1:nbins/2)>vals(locmax)/2);
+if isempty(maximas) %assume single peak
+    [x12,locmax] = max(vals);
+else
+    locmax = maximas(end);
+    x12 = vals(locmax);
+end
+
+x1 = [bins(locmax) x12]';
+
+% % apply suppresion
+% [vals,bins] = hist(double(In(In>bins(locmax))),100);
+if perc
+% find the percentile that has %95 of right hand data
+    idx2 = find((cumsum(vals)/sum(vals(:)))>perc,1,'first');
+else
+    idx2 = length(bins);
+end
+x2 = [bins(idx2) 0]';
+x0 = [bins(locmax+1:end);vals(locmax+1:end)] ;
+% make sure solution is in the convex region (this is necessary for perc 
+% calculations)
+x0 = x0(:,x0(1,:)<x2(1) & x0(1,:)>x1(1));
+[maxval,maxarg,d]=dist2line(x1,x2,x0);
+if numel(maxarg)
+    threshold = maxarg(1);
+else
+    maxIn = max(In(:));
+    threshold = max(1,graythresh(In/maxIn)*maxIn); % for heavy peaked distributions, OTSU returns 0
+end
+end
+function [maxval,maxarg,dists] = dist2line(x1,x2,x0)
+%DIST2LINE finds the distance of x0 to line specified by x1&x2
+% 
+% [OUTPUTARGS] = DIST2LINE(INPUTARGS) Explain usage here
+% 
+% Examples: 
+% 
+% Provide sample usage code here
+% 
+% See also: List related files here
+
+% $Author: base $	$Date: 2015/08/19 10:30:44 $	$Revision: 0.1 $
+% Copyright: HHMI 2015
+% x2-x1)*(y1-y0)-(x1-x0)*(y2-y1)//sqrt((x2-x1)^2+
+% d = abs((x2(1,:)-x1(1,:)) * (x1(2)-x0(2)) - (x1(1,:)-x0(1,:)).*(x2(2,:)-x1(2,:)))/norm(x2-x1);
+
+m10 = (x1(2)-x0(2,:))./(x1(1)-x0(1,:));
+m12 = (x1(2)-x2(2))/(x1(1)-x2(1));
+dists = abs((m10-m12).*(x2(1)-x1(1)).*(x1(1)-x0(1,:))/norm(x2-x1));
+
+
+[maxval,maxloc] = max(dists);
+maxarg = x0(:,maxloc);
+end
 
 function [Iout] = deployedtiffread(fileName,slices)
 %DEPLOYEDTIFFREAD Summary of this function goes here
@@ -237,7 +339,7 @@ end
 
 end
 
-function deployment()
+function deployment(brain)
 %%
 % totest from matlab window:
 % sigma1 = 3.4055002;
@@ -251,16 +353,39 @@ function deployment()
 %     '[50 974 50 1486 10 241]',...
 %         '4');
 %     '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-09-25/Descriptors/13844-prob.0.txt',...
-dogDescriptor('/nobackup2/mouselight/cluster/2016-09-25/classifier_output/2016-10-04/01/01359/01359-prob.1.h5',...
-    'test.txt',...
-    '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
+% dogDescriptor('/nobackup2/mouselight/cluster/2016-10-25/classifier_output/2016-10-27/01/01068/01068-prob.1.h5',...
+%     'test.txt',...
+%     '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
+
+dogDescriptor('/groups/mousebrainmicro/mousebrainmicro/data/2016-12-05/2016-12-13/01/01783/01783-ngc.1.tif',...
+    './05371-ngc.0.txt',...
+    '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1915 5 240]','4')
+%  /groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-12-05/Descriptors/05374-ngc.1.txt "[11 11 11]" "[3.405500 3.405500 3.405500]" "[4.049845 4.049845 4.049845]" "[5 1019 5 1915 5 240]" 4> output.log'
+
 %%
+tag=''
 addpath(genpath('./common'))
-brain = '2016-10-25';
+% brain = '2016-12-05';
+% tag = ''
+imagesiz = [1024 1536 251]
+imagesiz = [1024 1920 241]
+if 1
+    % old
+    inputfold = '/nrs/mouselight/cluster/';
+else
+    % new    
+    inputfold = '/nrs/mouselight/analytics/';
+end
+
+outputlocation = '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/';
+outputfold = fullfile(outputlocation,sprintf('%s%s/Descriptors/',brain,tag));
+
 if 1
     args.level = 3;
-    args.ext = 'h5';
-    opt.inputfolder = sprintf('/nobackup2/mouselight/cluster/%s/classifier_output',brain);
+    args.ext = 'tif';
+    opt.inputfolder = fullfile(inputfold,sprintf('%s%s/classifier_output',brain,tag));
+    % you can also provide raw tiles for descriptors
+    opt.inputfolder = '/groups/mousebrainmicro/mousebrainmicro/data/2016-12-05'
     opt.seqtemp = fullfile(opt.inputfolder,'filelist.txt')
     if exist(opt.seqtemp, 'file') == 2
         % load file directly
@@ -270,24 +395,30 @@ if 1
     end
 end
 % dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt)
-outputfold = sprintf('/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/%s/Descriptors/',brain)
 mkdir(outputfold)
-fid=fopen(sprintf('/nobackup2/mouselight/cluster/%s/classifier_output/filelist.txt',brain),'r');
+unix(sprintf('umask g+rxw %s',outputfold))
+
+% fid=fopen(fullfile(inputfold,sprintf('%s/classifier_output/filelist.txt',brain)),'r');
+fid=fopen(opt.seqtemp,'r');
 inputfiles = textscan(fid,'%s');
 inputfiles = inputfiles{1};
-fclose(fid);
+fclose(fid); 
 %%
-if 0
-    validx = missinigFiles(brain,size(inputfiles,1))
+if 1
+    intxt = fullfile(opt.inputfolder,'filelist.txt')
+    missingfiles = missinigFiles(brain,intxt);
+else
+    missingfiles = ones(1,size(inputfiles,1));
 end
 %% mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
 numcores = 3;
-pre = 'prob'
+pre = 'ngc' % or prob
 rt = 4;
-myfile = sprintf('dogdescriptorrun_%s.sh',brain);
+myfile = sprintf('dogdescriptorrun_%s%s_missing.sh',brain,tag);
 compiledfunc = '/groups/mousebrainmicro/home/base/CODE/MATLAB/compiledfunctions/dogDescriptor/dogDescriptor'
 if 1
     mkdir(fileparts(compiledfunc))
+    unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
     sprintf('mcc -m -v -R -singleCompThread ./dogDescriptor.m -d %s',fileparts(compiledfunc))
 end
 
@@ -296,13 +427,12 @@ s = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 numRands = length(s);
 %specify length of random string to generate
 sLength = 10;
-ROI = [5 1024-5 5 1536-5 10 251-1];
+ROI = [5 imagesiz(1)-5 5 imagesiz(2)-5 5 imagesiz(3)-1];
 %-o /dev/null
-fid = fopen(myfile,'w');
 esttime = 6*60;
-
-%%
-for ii=1:size(inputfiles,1)%find(~validx)%
+%
+fid = fopen(myfile,'w');
+for ii=find(missingfiles)%
     %%
     %generate random string
     randString = s( ceil(rand(1,sLength)*numRands) );
@@ -315,26 +445,6 @@ for ii=1:size(inputfiles,1)%find(~validx)%
 end
 unix(sprintf('chmod +x %s',myfile));
 fclose(fid);
-end
-function validx = missinigFiles(brain,totnum)
-%%
-outputfold = sprintf('/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/%s/Descriptors/',brain)
-mkdir(outputfold)
-fid=fopen(sprintf('/nobackup2/mouselight/cluster/%s/classifier_output/filelist.txt',brain),'r');
-inputfiles = textscan(fid,'%s');
-inputfiles = inputfiles{1};
-fclose(fid);
-totnum = size(inputfiles,1);
-tmpfiles = dir([sprintf('/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/%s/Descriptors/',brain),'*.txt']);
-validx = zeros(1,size(inputfiles,1));
-for ii=1:length(tmpfiles)
-    % check if file exists
-    tmpfil = tmpfiles(ii).name;
-    idx = (str2double(tmpfil(1:5))-1)*2 + str2double(tmpfil(12))+1;
-    validx(idx)=1;
-end
-find(~validx)
-
 end
 
 
