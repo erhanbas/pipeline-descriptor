@@ -5,7 +5,7 @@ function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt)
 %   dog = gauss1(sig1)-gauss2(sig1) : difference kernel
 %   out = input*dog : convolution
 %   out > max(out)/rt : only keep signal > ratio threshold
-%   out : [x-y-z-I] : spatial location and intensity at that location
+%   out : [x-y-z-Ifilt-Iraw] : spatial location (0 index) and filter & raw intensity at that location
 %
 % Inputs:
 %   inputimage: input file can be tif or h5
@@ -17,7 +17,7 @@ function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt)
 %
 % Outputs:
 %   outputfile: text file that has x-y-z-I values as row vectors
-%   des: [Nx4]: x-y-z-I row vector
+%   des: [Nx5]: x-y-z-Ifilt-Iraw row vector
 %
 % Examples:
 %   dogDescriptor('/nobackup2/mouselight/cluster/2016-09-25/classifier_output/2016-10-02/00/00314/00314-prob.0.h5',...
@@ -35,20 +35,6 @@ if strcmp(fileext,'.h5')
 else
     It = deployedtiffread(inputimage);
 end
-%% normalization factor
-if isa(It,'uint16')
-    normfac = 2^16-1;
-elseif isa(It,'uint8')
-    normfac = 2^8-1;
-else
-    maxIt = max(max(max(It,[],3),[],2));
-    if maxIt>1
-        normfac = 2^16-1;
-    else
-        normfac = 1;
-    end
-end
-
 %%
 fprintf('Read %s in %f sec\n',inputimage,toc(tload))
 dims = size(It);
@@ -85,12 +71,32 @@ fprintf('Convolution of %s in %f sec\n',inputimage,toc(tcon))
 
 st = (size(dog)+1)/2+1;
 ed = st+dims-1;
-It = It(st(1):ed(1),st(2):ed(2),st(3):ed(3)); % crop
+It = It(st(1):ed(1),st(2):ed(2),st(3):ed(3)); % crop. Shifted -1 to make indicies 0 based
+%% normalization factor
+if isa(It,'uint16')
+    normfac = 2^16-1;
+elseif isa(It,'uint8')
+    normfac = 2^8-1;
+else
+    maxIt = max(max(max(It,[],3),[],2));
+    if maxIt>1
+        normfac = 2^16-1;
+    else
+        normfac = 1;
+    end
+end
+imnormfac = normfac;
+normfac = normfac*sum(dog(dog>0)); % max posible filter result will be at truncated filter
 %%
 maxIt = max(max(max(It,[],3),[],2));
+if 1
+    %thr = graythresh(It/maxIt)*maxIt;
+    thr = getThresh(It);
+else
+    thr = maxIt/rt;
+end
 % It(It<(max(It(:))/rt))=0; % slow
-It = It.*(It>=(maxIt/rt));
-
+It = It.*(It>=(thr));
 %%
 tloc = tic;
 if 0
@@ -118,16 +124,83 @@ end
 fprintf('Local maxima of %s in %f sec\n',inputimage,toc(tloc))
 %%
 validinds = xx>=ROI(1)&xx<=ROI(2)&yy>=ROI(3)&yy<=ROI(4)&zz>=ROI(5)&zz<=ROI(6);
-des = [xx(:),yy(:),zz(:)];
-des = des(validinds,:);
-vals = (It(sub2ind(size(It),des(:,2),des(:,1),des(:,3))));
-des = [des vals/normfac]';
-
-%% TODO: return uniform sampling over spatial domain
+loc = [xx(:),yy(:),zz(:)];
+loc = loc(validinds,:);
+desvals = double(It(sub2ind(size(It),loc(:,2),loc(:,1),loc(:,3))));
+%%
+% reload input image
+if strcmp(fileext,'.h5')
+    It = permute(squeeze(h5read(inputimage,'/exported_data')),[2 1 3]);
+else
+    It = deployedtiffread(inputimage);
+end
+vals = double(It(sub2ind(size(It),loc(:,2)+1,loc(:,1)+1,loc(:,3)+1))); % intensity vals. +1 as original image is not 0 indexed
+des = [loc desvals/normfac vals/imnormfac];
+%%
+if 0
+    nbins = max(10,2^round(log2(length(unique(des(:,5))))-1));
+    iThr = getThresh(des(:,5),nbins);
+    
+    des_ = des(des(:,5)>=iThr,:);
+    % check uniformity
+    %%
+    nbins = round((dims([2 1 3])./[100 100 50]));
+    [accArr edges ctrs] = histn(des_(:,1:3),dims([2 1 3]),nbins)
+    %%
+    [aa,bb] = ndgrid(edges{1},edges{2})
+    
+    %%
+    figure, imshow(squeeze(max(It,[],3)),[])
+    hold on
+    myplot3(des_(:,1:3)+1,'ro')
+    
+elseif 0
+    %%i
+    for ithr = 0:.1:.9
+        if sum(des(:,5)>ithr) < 5e3
+            break
+        end
+    end
+    
+    desSorted = des(des(:,5)>ithr,:);
+    
+    figure, imshow(squeeze(max(It,[],3)),[])
+    hold on
+    myplot3(desSorted(:,1:3)+1,'.')
+    %     myplot3(desSorted(id,1:3),'o')
+    
+elseif 0
+    %% TODO: return uniform sampling over spatial domain
+    % sort based on strength
+    [vals,inds] = sort(des(:,5),'descend');
+    desSorted = des(inds,:);
+    % get decision threshold
+    desthr = getThresh(vals);
+    
+    % eps-sampling
+    Mdl = KDTreeSearcher(desSorted(:,1:3));
+    query=rangesearch(Mdl,desSorted(:,1:3),15);
+    
+    keepthese = NaN(size(desSorted,1),1);
+    for idx = 1:size(query,1)
+        if ~isnan(keepthese(idx))
+            continue
+        end
+        queidx = query{idx};
+        keepthese(queidx(1)) = 1;
+        keepthese(queidx(2:end)) = 0;
+    end
+    %
+    id = find(keepthese);
+    % figure, imshow(squeeze(max(It,[],3)),[0 1e3])
+    % hold on
+    % myplot3(desSorted(:,1:3),'.')
+    % myplot3(desSorted(id,1:3),'o')
+end
 %%
 if ~isempty(outputfile)
     fid = fopen(outputfile,'w');
-    fprintf(fid,'%d %d %d %f\n',des);
+    fprintf(fid,'%d %d %d %.3f %.3f\n',des');
     fclose(fid);
 end
 if nargout<1
@@ -166,7 +239,6 @@ end
 
 function deployment()
 %%
-% mcc -m -v -R -singleCompThread /groups/mousebrainmicro/home/base/CODE/MATLAB/descriptors/dogDescriptor.m -d /groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/compiledfunctions/dogDescriptor
 % totest from matlab window:
 % sigma1 = 3.4055002;
 % sigma2 = 4.0498447;
@@ -178,14 +250,13 @@ function deployment()
 %     sprintf('[%f %f %f]',[4.049845 4.049845 4.049845]),...
 %     '[50 974 50 1486 10 241]',...
 %         '4');
-%%% mcc -m -R -nojvm -v pointMatch.m -d /groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/compiledfunctions/pointMatch  -a ./common -a ./thirdparty
-dogDescriptor('/nobackup2/mouselight/cluster/2016-09-25/classifier_output/2016-10-02/00/00314/00314-prob.0.h5',...
-    '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-09-25/Descriptors/13844-prob.0.txt',...
+%     '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-09-25/Descriptors/13844-prob.0.txt',...
+dogDescriptor('/nobackup2/mouselight/cluster/2016-09-25/classifier_output/2016-10-04/01/01359/01359-prob.1.h5',...
+    'test.txt',...
     '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
 %%
-
 addpath(genpath('./common'))
-brain = '2016-09-25';
+brain = '2016-10-25';
 if 1
     args.level = 3;
     args.ext = 'h5';
@@ -209,15 +280,13 @@ fclose(fid);
 if 0
     validx = missinigFiles(brain,size(inputfiles,1))
 end
-%%
-
+%% mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
 numcores = 3;
 pre = 'prob'
 rt = 4;
-myfile = sprintf('dogdescriptorrun_%s_run3.sh',brain);
+myfile = sprintf('dogdescriptorrun_%s.sh',brain);
 compiledfunc = '/groups/mousebrainmicro/home/base/CODE/MATLAB/compiledfunctions/dogDescriptor/dogDescriptor'
 if 1
-    %mcc -m -v -R -singleCompThread /groups/mousebrainmicro/home/base/CODE/MATLAB/descriptors/dogDescriptor.m -d /groups/mousebrainmicro/home/base/CODE/MATLAB/stitching/compiledfunctions/dogDescriptor
     mkdir(fileparts(compiledfunc))
     sprintf('mcc -m -v -R -singleCompThread ./dogDescriptor.m -d %s',fileparts(compiledfunc))
 end
@@ -233,18 +302,19 @@ fid = fopen(myfile,'w');
 esttime = 6*60;
 
 %%
-for ii=find(~validx)%1:size(inputfiles,1)%
+for ii=1:size(inputfiles,1)%find(~validx)%
     %%
     %generate random string
     randString = s( ceil(rand(1,sLength)*numRands) );
     name = sprintf('dog_%05d-%s',ii,randString);
     outfile = fullfile(outputfold,sprintf('%05d-%s.%d.txt',floor((ii-1)/2)+1,pre,rem(ii+1,2)));
-    args = sprintf('''%s %s %s "[%d %d %d]" "[%f %f %f]" "[%f %f %f]" "[%d %d %d %d %d %d]" %d> output.log''',compiledfunc,inputfiles{ii},outfile,...
+    argsout = sprintf('''%s %s %s "[%d %d %d]" "[%f %f %f]" "[%f %f %f]" "[%d %d %d %d %d %d]" %d> output.log''',compiledfunc,inputfiles{ii},outfile,...
         11*ones(1,3),3.4055002*ones(1,3),4.0498447*ones(1,3),ROI,rt);
-    mysub = sprintf('qsub -pe batch %d -l d_rt=%d -N %s -j y -o ~/logs -b y -cwd -V %s\n',numcores,esttime,name,args);
+    mysub = sprintf('qsub -pe batch %d -l d_rt=%d -N %s -j y -o ~/logs -b y -cwd -V %s\n',numcores,esttime,name,argsout);
     fwrite(fid,mysub);
 end
 unix(sprintf('chmod +x %s',myfile));
+fclose(fid);
 end
 function validx = missinigFiles(brain,totnum)
 %%
