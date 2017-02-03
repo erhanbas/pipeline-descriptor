@@ -1,5 +1,6 @@
 *.m~
 *.tif
-*.tif
+*.tiff
 *.png
+*.h5
 /sampledata
