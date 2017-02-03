@@ -79,6 +79,7 @@ fftdog = fftn(dog,outsiz);
 It = ifftn(It.*fftdog);
 It = real(It);
 fprintf('Convolution of %s in %f sec\n',inputimage,toc(tcon))
+% A = ifftn( fftn(A, fftSize) .* fftn(h, fftSize), 'symmetric' );
 
 if withpadding
     st = siz(1)+(size(dog)+1)/2+1;
