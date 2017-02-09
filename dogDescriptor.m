@@ -31,6 +31,10 @@ function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,withpadd
 
 % $Author: base $	$Date: 2016/09/20 14:30:14 $	$Revision: 0.1 $
 % Copyright: HHMI 2016
+if nargin<1
+    brain = '2017-01-15';
+    deployment(brain)
+end
 if nargin < 8
     withpadding = 1;
 end
@@ -222,6 +226,7 @@ if ~isempty(outputfile)
     fid = fopen(outputfile,'w');
     fprintf(fid,'%d %d %d %.3f %.3f\n',des');
     fclose(fid);
+    unix(sprintf('chmod g+rxw %s',outputfile))
 end
 if nargout<1
     des = [];
@@ -346,36 +351,47 @@ function deployment(brain)
 % sigma1 = 3.4055002;
 % sigma2 = 4.0498447;
 %
-% dogDescriptor('/nobackup2/mouselight/cluster/2016-07-18/classifier_output/2016-07-24/01/01063/01063-ngc.0-Probability-2.h5',...
-%     '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/160404vs3/Descriptors/00001-ngc.0-Probabilitytxt',...
+%% read sh file
+fid = fopen('/groups/mousebrainmicro/home/base/CODE/MATLAB/pipeline/descriptor/shfiles/dogdescriptorrun_2017-01-15_missing.sh');
+tline = fgets(fid);
+while ischar(tline)
+    inds = strfind(tline,'''');
+    C = strsplit(tline(inds(1)+1:inds(2)-1),' ');
+    siz=strjoin(C(4:6));siz=siz(2:end-1);
+    sig1=strjoin(C(7:9));sig1=sig1(2:end-1);
+    sig2=strjoin(C(10:12));sig2=sig2(2:end-1);
+    ROI=strjoin(C(13:18));ROI=ROI(2:end-1);
+    dogDescriptor(C{2},C{3},siz,sig1,sig2,ROI,C{19})
+    tline = fgets(fid);
+end
+fclose(fid);
+%%
+% dogDescriptor('/nrs/mouselight/cluster/classifierOutputs/2017-01-15/classifier_output/2017-01-15/00/00056/00056-prob.0.h5',...
+%     'test.txt',...
 %     '[11 11 11]',...
 %     sprintf('[%f %f %f]',[3.405500 3.405500 3.405500]),...
 %     sprintf('[%f %f %f]',[4.049845 4.049845 4.049845]),...
-%     '[50 974 50 1486 10 241]',...
+%     '[5 1019 5 1531 5 250]',...
 %         '4');
 %     '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-09-25/Descriptors/13844-prob.0.txt',...
 % dogDescriptor('/nobackup2/mouselight/cluster/2016-10-25/classifier_output/2016-10-27/01/01068/01068-prob.1.h5',...
 %     'test.txt',...
 %     '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
 
-dogDescriptor('/groups/mousebrainmicro/mousebrainmicro/data/2016-12-05/2016-12-13/01/01783/01783-ngc.1.tif',...
-    './05371-ngc.0.txt',...
-    '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1915 5 240]','4')
+% dogDescriptor('/groups/mousebrainmicro/mousebrainmicro/data/2016-12-05/2016-12-13/01/01783/01783-ngc.1.tif',...
+%     './05371-ngc.0.txt',...
+%     '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1915 5 240]','4')
 %  /groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-12-05/Descriptors/05374-ngc.1.txt "[11 11 11]" "[3.405500 3.405500 3.405500]" "[4.049845 4.049845 4.049845]" "[5 1019 5 1915 5 240]" 4> output.log'
 
 %%
 tag=''
 addpath(genpath('./common'))
 % brain = '2016-12-05';
-% tag = ''
 imagesiz = [1024 1536 251]
-imagesiz = [1024 1920 241]
+% imagesiz = [1024 1920 241]
 if 1
     % old
-    inputfold = '/nrs/mouselight/cluster/';
-else
-    % new    
-    inputfold = '/nrs/mouselight/analytics/';
+    inputfold = '/nrs/mouselight/cluster/classifierOutputs';
 end
 
 outputlocation = '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/';
@@ -383,10 +399,13 @@ outputfold = fullfile(outputlocation,sprintf('%s%s/Descriptors/',brain,tag));
 
 if 1
     args.level = 3;
-    args.ext = 'tif';
-    opt.inputfolder = fullfile(inputfold,sprintf('%s%s/classifier_output',brain,tag));
-    % you can also provide raw tiles for descriptors
-    opt.inputfolder = '/groups/mousebrainmicro/mousebrainmicro/data/2016-12-05'
+    args.ext = 'h5';
+    if 1
+        opt.inputfolder = fullfile(inputfold,sprintf('%s%s/classifier_output',brain,tag));
+    else
+        % you can also provide raw tiles for descriptors
+        opt.inputfolder = '/groups/mousebrainmicro/mousebrainmicro/data/2016-12-05'
+    end
     opt.seqtemp = fullfile(opt.inputfolder,'filelist.txt')
     if exist(opt.seqtemp, 'file') == 2
         % load file directly
@@ -398,6 +417,7 @@ end
 % dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt)
 mkdir(outputfold)
 unix(sprintf('umask g+rxw %s',outputfold))
+unix(sprintf('chmod g+rxw %s',outputfold))
 
 % fid=fopen(fullfile(inputfold,sprintf('%s/classifier_output/filelist.txt',brain)),'r');
 fid=fopen(opt.seqtemp,'r');
@@ -411,16 +431,18 @@ if 1
 else
     missingfiles = ones(1,size(inputfiles,1));
 end
+sum(missingfiles)
 %% mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
 numcores = 3;
-pre = 'ngc' % or prob
+pre = 'prob' % or ngc
 rt = 4;
-myfile = sprintf('dogdescriptorrun_%s%s_missing.sh',brain,tag);
+myfile = sprintf('./shfiles/dogdescriptorrun_%s%s.sh',brain,tag);
 compiledfunc = '/groups/mousebrainmicro/home/base/CODE/MATLAB/compiledfunctions/dogDescriptor/dogDescriptor'
 if 1
     mkdir(fileparts(compiledfunc))
     unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
-    sprintf('mcc -m -v -R -singleCompThread ./dogDescriptor.m -d %s',fileparts(compiledfunc))
+    sprintf('mcc -m -v -R -singleCompThread %s/dogDescriptor.m -d %s',pwd,fileparts(compiledfunc))
+    unix(sprintf('chmod g+rwx %s',compiledfunc))
 end
 
 %find number of random characters to choose from
@@ -433,15 +455,25 @@ ROI = [5 imagesiz(1)-5 5 imagesiz(2)-5 5 imagesiz(3)-1];
 esttime = 6*60;
 %
 fid = fopen(myfile,'w');
+outputlogfold = fullfile('/groups/mousebrainmicro/mousebrainmicro/LOG',brain,'descriptor')
+mkdir(outputlogfold)
+unix(sprintf('chmod g+rwx %s',outputlogfold))
+logout=0
 for ii=find(missingfiles)%
     %%
     %generate random string
     randString = s( ceil(rand(1,sLength)*numRands) );
     name = sprintf('dog_%05d-%s',ii,randString);
     outfile = fullfile(outputfold,sprintf('%05d-%s.%d.txt',floor((ii-1)/2)+1,pre,rem(ii+1,2)));
-    argsout = sprintf('''%s %s %s "[%d %d %d]" "[%f %f %f]" "[%f %f %f]" "[%d %d %d %d %d %d]" %d> output.log''',compiledfunc,inputfiles{ii},outfile,...
-        11*ones(1,3),3.4055002*ones(1,3),4.0498447*ones(1,3),ROI,rt);
-    mysub = sprintf('qsub -pe batch %d -l d_rt=%d -N %s -j y -o ~/logs -b y -cwd -V %s\n',numcores,esttime,name,argsout);
+    if logout
+        argsout = sprintf('''%s %s %s "[%d %d %d]" "[%f %f %f]" "[%f %f %f]" "[%d %d %d %d %d %d]" %d> %s/output-%05d.log''',compiledfunc,inputfiles{ii},outfile,...
+            11*ones(1,3),3.4055002*ones(1,3),4.0498447*ones(1,3),ROI,rt,outputlogfold,ii);
+        mysub = sprintf('qsub -pe batch %d -l d_rt=%d -N %s -j y -o %s -b y -cwd -V %s\n',numcores,esttime,name,outputlogfold,argsout);
+    else
+        argsout = sprintf('''%s %s %s "[%d %d %d]" "[%f %f %f]" "[%f %f %f]" "[%d %d %d %d %d %d]" %d''',compiledfunc,inputfiles{ii},outfile,...
+            11*ones(1,3),3.4055002*ones(1,3),4.0498447*ones(1,3),ROI,rt);
+        mysub = sprintf('qsub -pe batch %d -l d_rt=%d -N %s -j y -o %s -b y -cwd -V %s\n',numcores,esttime,name,'/dev/null',argsout);
+end
     fwrite(fid,mysub);
 end
 unix(sprintf('chmod +x %s',myfile));
