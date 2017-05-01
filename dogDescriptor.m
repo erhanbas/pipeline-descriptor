@@ -32,7 +32,7 @@ function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,withpadd
 % $Author: base $	$Date: 2016/09/20 14:30:14 $	$Revision: 0.1 $
 % Copyright: HHMI 2016
 if nargin<1
-    brain = '2017-01-15';
+    brain = '2016-09-12';
     deployment(brain)
 end
 if nargin < 8
@@ -109,118 +109,69 @@ imnormfac = normfac;
 normfac = normfac*sum(dog(dog>0)); % max posible filter result will be at truncated filter
 %%
 maxIt = max(max(max(It,[],3),[],2));
+emptyimage=0;
 if 1
     %thr = graythresh(It/maxIt)*maxIt;
-    thr = min(maxIt*7/10, max(maxIt/10,getThresh(It(It>maxIt/20)))); % make sure it is within [0.1 0.9]*maxIt range
+    if isempty(It(It>maxIt/20))
+        thr=0;
+        emptyimage=1;
+    else
+        thr = min(maxIt*7/10, max(maxIt/10,getThresh(It(It>maxIt/20)))); % make sure it is within [0.1 0.9]*maxIt range
+    end
 else
     thr = maxIt/rt;
 end
-% It(It<(max(It(:))/rt))=0; % slow
-It = It.*(It>=(thr));
 %%
-tloc = tic;
-if 0
-    It = imregionalmax(It,26);
-    [yy,xx,zz] = ind2sub(size(It),find(It));
+if emptyimage
+    des=[];
 else
-    s  = regionprops(It>0, 'BoundingBox');
-    clear submax
-    for ii=1:length(s)
-        bb = s(ii).BoundingBox;
-        st = bb([2 1 3])+.5;
-        en = st+bb([5 4 6])-1;
-        if any(bb([5 4 6])<[3 3 3])
-            bb([5 4 6])
-            continue
-        end
-        It_ = It(st(1):en(1),st(2):en(2),st(3):en(3));
-        %     figure, imshow3D(It_)
-        immax = imregionalmax(It_.*double(It_>0));
-        idxmax = find(immax);
-        [iy,ix,iz] = ind2sub(size(immax),idxmax);
-        submax{ii} = ones(length(iy),1)*st+[iy(:),ix(:),iz(:)]-1;
-    end
-    localmax = cat(1,submax{:});
-    xx = localmax(:,2);
-    yy = localmax(:,1);
-    zz = localmax(:,3);
-end
-fprintf('Local maxima of %s in %f sec\n',inputimage,toc(tloc))
-%%
-validinds = xx>=ROI(1)&xx<=ROI(2)&yy>=ROI(3)&yy<=ROI(4)&zz>=ROI(5)&zz<=ROI(6);
-loc = [xx(:),yy(:),zz(:)];
-loc = loc(validinds,:);
-desvals = double(It(sub2ind(size(It),loc(:,2),loc(:,1),loc(:,3)))); % descriptors are "0" indexed
-%%
-% reload input image
-if strcmp(fileext,'.h5')
-    It = permute(squeeze(h5read(inputimage,'/exported_data')),[2 1 3]);
-else
-    It = deployedtiffread(inputimage);
-end
-vals = double(It(sub2ind(size(It),loc(:,2)+1,loc(:,1)+1,loc(:,3)+1))); % intensity vals. +1 as original image is not 0 indexed
-des = [loc desvals/normfac vals/imnormfac];
-%%
-if 0
-    nbins = max(10,2^round(log2(length(unique(des(:,5))))-1));
-    iThr = getThresh(des(:,5),nbins);
-    
-    des_ = des(des(:,5)>=iThr,:);
-    % check uniformity
+    % It(It<(max(It(:))/rt))=0; % slow
+    It = It.*(It>=(thr));
     %%
-    nbins = round((dims([2 1 3])./[100 100 50]));
-    [accArr edges ctrs] = histn(des_(:,1:3),dims([2 1 3]),nbins)
-    %%
-    [aa,bb] = ndgrid(edges{1},edges{2})
-    
-    %%
-    figure, imshow(squeeze(max(It,[],3)),[])
-    hold on
-    myplot3(des_(:,1:3)+1,'ro')
-    
-elseif 0
-    %%i
-    for ithr = 0:.1:.9
-        if sum(des(:,5)>ithr) < 5e3
-            break
+    tloc = tic;
+    if 0
+        It = imregionalmax(It,26);
+        [yy,xx,zz] = ind2sub(size(It),find(It));
+    else
+        s  = regionprops(It>0, 'BoundingBox');
+        clear submax
+        for ii=1:length(s)
+            bb = s(ii).BoundingBox;
+            st = bb([2 1 3])+.5;
+            en = st+bb([5 4 6])-1;
+            if any(bb([5 4 6])<[3 3 3])
+                bb([5 4 6])
+                continue
+            end
+            It_ = It(st(1):en(1),st(2):en(2),st(3):en(3));
+            %     figure, imshow3D(It_)
+            immax = imregionalmax(It_.*double(It_>0));
+            idxmax = find(immax);
+            [iy,ix,iz] = ind2sub(size(immax),idxmax);
+            submax{ii} = ones(length(iy),1)*st+[iy(:),ix(:),iz(:)]-1;
         end
+        localmax = cat(1,submax{:});
+        xx = localmax(:,2);
+        yy = localmax(:,1);
+        zz = localmax(:,3);
     end
-    
-    desSorted = des(des(:,5)>ithr,:);
-    
-    figure, imshow(squeeze(max(It,[],3)),[])
-    hold on
-    myplot3(desSorted(:,1:3)+1,'.')
-    %     myplot3(desSorted(id,1:3),'o')
-    
-elseif 0
-    %% TODO: return uniform sampling over spatial domain
-    % sort based on strength
-    [vals,inds] = sort(des(:,5),'descend');
-    desSorted = des(inds,:);
-    % get decision threshold
-    desthr = getThresh(vals);
-    
-    % eps-sampling
-    Mdl = KDTreeSearcher(desSorted(:,1:3));
-    query=rangesearch(Mdl,desSorted(:,1:3),15);
-    
-    keepthese = NaN(size(desSorted,1),1);
-    for idx = 1:size(query,1)
-        if ~isnan(keepthese(idx))
-            continue
-        end
-        queidx = query{idx};
-        keepthese(queidx(1)) = 1;
-        keepthese(queidx(2:end)) = 0;
+    fprintf('Local maxima of %s in %f sec\n',inputimage,toc(tloc))
+    %%
+    validinds = xx>=ROI(1)&xx<=ROI(2)&yy>=ROI(3)&yy<=ROI(4)&zz>=ROI(5)&zz<=ROI(6);
+    loc = [xx(:),yy(:),zz(:)];
+    loc = loc(validinds,:);
+    desvals = double(It(sub2ind(size(It),loc(:,2),loc(:,1),loc(:,3)))); % descriptors are "0" indexed
+    %%
+    % reload input image
+    if strcmp(fileext,'.h5')
+        It = permute(squeeze(h5read(inputimage,'/exported_data')),[2 1 3]);
+    else
+        It = deployedtiffread(inputimage);
     end
-    %
-    id = find(keepthese);
-    % figure, imshow(squeeze(max(It,[],3)),[0 1e3])
-    % hold on
-    % myplot3(desSorted(:,1:3),'.')
-    % myplot3(desSorted(id,1:3),'o')
+    vals = double(It(sub2ind(size(It),loc(:,2)+1,loc(:,1)+1,loc(:,3)+1))); % intensity vals. +1 as original image is not 0 indexed
+    des = [loc desvals/normfac vals/imnormfac];
 end
+
 %%
 if ~isempty(outputfile)
     fid = fopen(outputfile,'w');
@@ -234,13 +185,13 @@ end
 end
 function [threshold,x1,x2,maxarg,vals,bins] = getThresh(In,nbins,perc)
 %GETTHRESH finds the binary threshold based on histogram maximal distance
-% 
+%
 % [OUTPUTARGS] = GETTHRESH(INPUTARGS) Explain usage here
-% 
-% Examples: 
-% 
+%
+% Examples:
+%
 % Provide sample usage code here
-% 
+%
 % See also: List related files here
 
 % $Author: base $	$Date: 2015/08/19 10:37:18 $	$Revision: 0.1 $
@@ -273,14 +224,14 @@ x1 = [bins(locmax) x12]';
 % % apply suppresion
 % [vals,bins] = hist(double(In(In>bins(locmax))),100);
 if perc
-% find the percentile that has %95 of right hand data
+    % find the percentile that has %95 of right hand data
     idx2 = find((cumsum(vals)/sum(vals(:)))>perc,1,'first');
 else
     idx2 = length(bins);
 end
 x2 = [bins(idx2) 0]';
 x0 = [bins(locmax+1:end);vals(locmax+1:end)] ;
-% make sure solution is in the convex region (this is necessary for perc 
+% make sure solution is in the convex region (this is necessary for perc
 % calculations)
 x0 = x0(:,x0(1,:)<x2(1) & x0(1,:)>x1(1));
 [maxval,maxarg,d]=dist2line(x1,x2,x0);
@@ -293,13 +244,13 @@ end
 end
 function [maxval,maxarg,dists] = dist2line(x1,x2,x0)
 %DIST2LINE finds the distance of x0 to line specified by x1&x2
-% 
+%
 % [OUTPUTARGS] = DIST2LINE(INPUTARGS) Explain usage here
-% 
-% Examples: 
-% 
+%
+% Examples:
+%
 % Provide sample usage code here
-% 
+%
 % See also: List related files here
 
 % $Author: base $	$Date: 2015/08/19 10:30:44 $	$Revision: 0.1 $
@@ -352,19 +303,21 @@ function deployment(brain)
 % sigma2 = 4.0498447;
 %
 %% read sh file
-fid = fopen('/groups/mousebrainmicro/home/base/CODE/MATLAB/pipeline/descriptor/shfiles/dogdescriptorrun_2017-01-15_missing.sh');
-tline = fgets(fid);
-while ischar(tline)
-    inds = strfind(tline,'''');
-    C = strsplit(tline(inds(1)+1:inds(2)-1),' ');
-    siz=strjoin(C(4:6));siz=siz(2:end-1);
-    sig1=strjoin(C(7:9));sig1=sig1(2:end-1);
-    sig2=strjoin(C(10:12));sig2=sig2(2:end-1);
-    ROI=strjoin(C(13:18));ROI=ROI(2:end-1);
-    dogDescriptor(C{2},C{3},siz,sig1,sig2,ROI,C{19})
+if 0
+    fid = fopen('/groups/mousebrainmicro/home/base/CODE/MATLAB/pipeline/descriptor/shfiles/dogdescriptorrun_2017-01-15_missing.sh');
     tline = fgets(fid);
+    while ischar(tline)
+        inds = strfind(tline,'''');
+        C = strsplit(tline(inds(1)+1:inds(2)-1),' ');
+        siz=strjoin(C(4:6));siz=siz(2:end-1);
+        sig1=strjoin(C(7:9));sig1=sig1(2:end-1);
+        sig2=strjoin(C(10:12));sig2=sig2(2:end-1);
+        ROI=strjoin(C(13:18));ROI=ROI(2:end-1);
+        dogDescriptor(C{2},C{3},siz,sig1,sig2,ROI,C{19})
+        tline = fgets(fid);
+    end
+    fclose(fid);
 end
-fclose(fid);
 %%
 % dogDescriptor('/nrs/mouselight/cluster/classifierOutputs/2017-01-15/classifier_output/2017-01-15/00/00056/00056-prob.0.h5',...
 %     'test.txt',...
@@ -423,11 +376,11 @@ unix(sprintf('chmod g+rxw %s',outputfold))
 fid=fopen(opt.seqtemp,'r');
 inputfiles = textscan(fid,'%s');
 inputfiles = inputfiles{1};
-fclose(fid); 
+fclose(fid);
 %%
 if 1
     intxt = fullfile(opt.inputfolder,'filelist.txt')
-    missingfiles = missinigFiles(brain,intxt);
+    missingfiles = missinigFiles([brain,tag],intxt);
 else
     missingfiles = ones(1,size(inputfiles,1));
 end
@@ -436,7 +389,9 @@ sum(missingfiles)
 numcores = 3;
 pre = 'prob' % or ngc
 rt = 4;
-myfile = sprintf('./shfiles/dogdescriptorrun_%s%s.sh',brain,tag);
+myfile = sprintf('./shfiles/dogdescriptorrun_%s%s_miss.sh',brain,tag);
+% myshfile = fullfile(experimentfolder,sprintf('cluster_ilastik_%s.sh',brain));
+
 compiledfunc = '/groups/mousebrainmicro/home/base/CODE/MATLAB/compiledfunctions/dogDescriptor/dogDescriptor'
 if 1
     mkdir(fileparts(compiledfunc))
@@ -473,17 +428,79 @@ for ii=find(missingfiles)%
         argsout = sprintf('''%s %s %s "[%d %d %d]" "[%f %f %f]" "[%f %f %f]" "[%d %d %d %d %d %d]" %d''',compiledfunc,inputfiles{ii},outfile,...
             11*ones(1,3),3.4055002*ones(1,3),4.0498447*ones(1,3),ROI,rt);
         mysub = sprintf('qsub -pe batch %d -l d_rt=%d -N %s -j y -o %s -b y -cwd -V %s\n',numcores,esttime,name,'/dev/null',argsout);
-end
+    end
+%     dogDescriptor(inputfiles{ii},outfile,sprintf('[%d %d %d]',11*ones(1,3)),sprintf('[%f %f %f]',3.4055002*ones(1,3)),sprintf('[%f %f %f]',4.0498447*ones(1,3)),...
+%         sprintf('[%d %d %d %d %d %d]',ROI),sprintf('%d',rt))
     fwrite(fid,mysub);
 end
 unix(sprintf('chmod +x %s',myfile));
 fclose(fid);
 end
 
-
-
-
-
+% %%
+% if 0
+%     nbins = max(10,2^round(log2(length(unique(des(:,5))))-1));
+%     iThr = getThresh(des(:,5),nbins);
+%     
+%     des_ = des(des(:,5)>=iThr,:);
+%     % check uniformity
+%     %%
+%     nbins = round((dims([2 1 3])./[100 100 50]));
+%     [accArr edges ctrs] = histn(des_(:,1:3),dims([2 1 3]),nbins)
+%     %%
+%     [aa,bb] = ndgrid(edges{1},edges{2})
+%     
+%     %%
+%     figure, imshow(squeeze(max(It,[],3)),[])
+%     hold on
+%     myplot3(des_(:,1:3)+1,'ro')
+%     
+% elseif 0
+%     %%i
+%     for ithr = 0:.1:.9
+%         if sum(des(:,5)>ithr) < 5e3
+%             break
+%         end
+%     end
+%     
+%     desSorted = des(des(:,5)>ithr,:);
+%     
+%     figure, imshow(squeeze(max(It,[],3)),[])
+%     hold on
+%     myplot3(desSorted(:,1:3)+1,'.')
+%     %     myplot3(desSorted(id,1:3),'o')
+%     
+% elseif 0
+%     %% TODO: return uniform sampling over spatial domain
+%     % sort based on strength
+%     [vals,inds] = sort(des(:,5),'descend');
+%     desSorted = des(inds,:);
+%     % get decision threshold
+%     desthr = getThresh(vals);
+%     
+%     % eps-sampling
+%     Mdl = KDTreeSearcher(desSorted(:,1:3));
+%     query=rangesearch(Mdl,desSorted(:,1:3),15);
+%     
+%     keepthese = NaN(size(desSorted,1),1);
+%     for idx = 1:size(query,1)
+%         if ~isnan(keepthese(idx))
+%             continue
+%         end
+%         queidx = query{idx};
+%         keepthese(queidx(1)) = 1;
+%         keepthese(queidx(2:end)) = 0;
+%     end
+%     %
+%     id = find(keepthese);
+%     % figure, imshow(squeeze(max(It,[],3)),[0 1e3])
+%     % hold on
+%     % myplot3(desSorted(:,1:3),'.')
+%     % myplot3(desSorted(id,1:3),'o')
+% end
+% 
+% 
+% 
 
 
 

@@ -16,7 +16,7 @@ for ii=1:length(tmpfiles)
     idx = (str2double(tmpfil(1:5))-1)*2 + str2double(tmpfil(end-4))+1;
     validx(idx)=1;
 end
-find(~validx)
+% find(~validx)
 validx = ~validx;
 
 end
