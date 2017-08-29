@@ -3,4 +3,5 @@
 *.tiff
 *.png
 *.h5
+/shfiles/
 
