@@ -1,4 +1,4 @@
-function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,withpadding)
+function varargout = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,withpadding,exitcode)
 %GENDESCTIPTOR returns difference of gaussian Descriptors
 %
 % [OUTPUTARGS] = DOGDESCTIPTOR(INPUTARGS)
@@ -32,12 +32,16 @@ function des = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,withpadd
 % $Author: base $	$Date: 2016/09/20 14:30:14 $	$Revision: 0.1 $
 % Copyright: HHMI 2016
 if nargin<1
-    brain = '2017-08-10';
+    brain = '2017-09-07';
     deployment(brain)
 end
 if nargin < 8
     withpadding = 1;
+    exitcode = 0;
+elseif nargin < 9
+    exitcode = 0;
 end
+varargout{1} = exitcode;
 tload=tic;
 [~,~,fileext] = fileparts(inputimage);
 if strcmp(fileext,'.h5')
@@ -178,9 +182,8 @@ if ~isempty(outputfile)
     fprintf(fid,'%d %d %d %.3f %.3f\n',des');
     fclose(fid);
     unix(sprintf('chmod g+rxw %s',outputfile))
-end
-if nargout<1
-    des = [];
+else
+    varargout{2} = des;
 end
 end
 function [threshold,x1,x2,maxarg,vals,bins] = getThresh(In,nbins,perc)
