@@ -32,8 +32,9 @@ function varargout = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,wi
 % $Author: base $	$Date: 2016/09/20 14:30:14 $	$Revision: 0.1 $
 % Copyright: HHMI 2016
 if nargin<1
-    brain = '2017-09-07';
+    brain = '2017-09-19';
     deployment(brain)
+    return
 end
 if nargin < 8
     withpadding = 1;
@@ -400,7 +401,7 @@ else
 end
 sum(missingfiles)
 %% mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
-numcores = 3;
+numcores = 4;
 pre = 'prob' % or ngc
 post = 'desc'
 rt = 4;
@@ -470,6 +471,7 @@ for ii=vv;%(vv<22131)%find(missingfiles)%
 end
 unix(sprintf('chmod +x %s',myfile));
 fclose(fid);
+sprintf('%s',myfile)
 end
 
 % %%
