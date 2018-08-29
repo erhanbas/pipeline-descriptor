@@ -1,4 +1,4 @@
-function varargout = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,withpadding,exitcode)
+function varargout = skelDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,withpadding,exitcode)
 %GENDESCTIPTOR returns difference of gaussian Descriptors
 %
 % [OUTPUTARGS] = DOGDESCTIPTOR(INPUTARGS)
@@ -23,8 +23,8 @@ function varargout = dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,wi
 %   des: [Nx5]: x-y-z-Ifilt-Iraw row vector
 %
 % Examples:
-%   dogDescriptor('/nobackup2/mouselight/cluster/2016-09-25/classifier_output/2016-10-02/00/00314/00314-prob.0.h5',...
-%   '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-09-25/Descriptors/13844-prob.0.txt',...
+%   skelDescriptor('/nrs/mouselight/pipeline_output/2018-08-15/stage_1_line_fix_output/2018-08-18/00/00466/00466-ngc.0.tif',...
+%   '/nrs/mouselight/Users/base/skelDescTest/00466-ngc.0.txt',...
 %   '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
 %
 % See also: zmatch.m
