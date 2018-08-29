@@ -1,4 +1,4 @@
-function varargout = skelDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,withpadding,exitcode)
+function varargout = skelDescriptor(inputimage,outputfile,configfile,exitcode)
 %GENDESCTIPTOR returns difference of gaussian Descriptors
 %
 % [OUTPUTARGS] = DOGDESCTIPTOR(INPUTARGS)
@@ -23,7 +23,7 @@ function varargout = skelDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,w
 %   des: [Nx5]: x-y-z-Ifilt-Iraw row vector
 %
 % Examples:
-%   skelDescriptor('/nrs/mouselight/pipeline_output/2018-08-15/stage_1_line_fix_output/2018-08-18/00/00466/00466-ngc.0.tif',...
+%   skelDescriptor('/nrs/mouselight/pipeline_output/2018-08-15/stage_1_line_fix_output/2018-08-16/01/01002/01002-ngc.0.tif',...
 %   '/nrs/mouselight/Users/base/skelDescTest/00466-ngc.0.txt',...
 %   '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
 %
@@ -32,151 +32,84 @@ function varargout = skelDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt,w
 % $Author: base $	$Date: 2016/09/20 14:30:14 $	$Revision: 0.1 $
 % Copyright: HHMI 2016
 if nargin<1
-    brain = '2017-09-25';
+    brain = '2018-08-15';
+    configfile = '/groups/mousebrainmicro/home/base/CODE/MATLAB/pipeline/pipeline-descriptor/configfiles/2018-08-15.cfg'
     deployment(brain)
     return
 end
-if nargin < 8
-    withpadding = 1;
-    exitcode = 0;
-elseif nargin < 9
+if nargin < 4
     exitcode = 0;
 end
 varargout{1} = exitcode;
 tload=tic;
 [~,~,fileext] = fileparts(inputimage);
+%%
+opt = configparser(configfile);
+
+fullh = opt.fullh;
+
 if strcmp(fileext,'.h5')
-    It = permute(squeeze(h5read(inputimage,'/exported_data')),[2 1 3]);
+    Io = permute(squeeze(h5read(inputimage,'/exported_data')),[2 1 3]);
 else
-    It = deployedtiffread(inputimage);
-end
-%%
-fprintf('Read %s in %f sec\n',inputimage,toc(tload))
-dims = size(It);
-sig1 = eval(sig1);
-sig2 = eval(sig2);
-siz = eval(siz);
-if nargin<6
-    ROI = ['''',num2str([1 dims(2) 1 dims(1) 1 dims(3)]),''''];
-    rt='4';
-elseif nargin<7
-    rt='4';
-end
-ROI = eval(ROI);
-rt = eval(rt);
-%%
-sig = sig1;
-[x,y,z] = ndgrid(-siz(1):siz(1),-siz(2):siz(2),-siz(3):siz(3));
-h = exp(-(x.*x/2/sig(1)^2 + y.*y/2/sig(2)^2 + z.*z/2/sig(3)^2));
-gauss1 = h/sum(h(:));
-
-sig = sig2;
-[x,y,z] = ndgrid(-siz(1):siz(1),-siz(2):siz(2),-siz(3):siz(3));
-h = exp(-(x.*x/2/sig(1)^2 + y.*y/2/sig(2)^2 + z.*z/2/sig(3)^2));
-gauss2 = h/sum(h(:));
-dog = gauss1 - gauss2;
-%%
-% padarrays
-if withpadding
-    It = padarray(It,siz(1)*ones(1,3),'symmetric','both');
+    Io = deployedtiffread(inputimage);
 end
 
-outsiz = size(It)+size(dog);%2.^nextpow2(size(It)+size(dog));
-tcon = tic;
-It = fftn(It,outsiz);
-fftdog = fftn(dog,outsiz);
-It = ifftn(It.*fftdog);
-It = real(It);
-fprintf('Convolution of %s in %f sec\n',inputimage,toc(tcon))
-% A = ifftn( fftn(A, fftSize) .* fftn(h, fftSize), 'symmetric' );
+%% median filter input image
+If = block3d({Io},[200 200 100],fullh,1,@ordfilt3D,{14});
 
-if withpadding
-    st = siz(1)+(size(dog)+1)/2+1;
-else
-    st = (size(dog)+1)/2+1;
-end
-ed = st+dims-1;
-It = It(st(1):ed(1),st(2):ed(2),st(3):ed(3)); % crop. Shifted -1 to make indicies 0 based
-%% normalization factor % THIS IS BUGGY: convolution always return double, never get into first two conditions
-if isa(It,'uint16')
-    normfac = 2^16-1;
-elseif isa(It,'uint8')
-    normfac = 2^8-1;
-else
-    maxIt = max(max(max(It,[],3),[],2));
-    if maxIt>1
-        normfac = 2^16-1;
-    else
-        normfac = 1;
+%%
+opt.thr = 15e3;
+opt.sizethreshold = 100;
+[skel,A,subs,edges,weights] = skeletonimage(If,opt);
+
+%%
+% clean up segmentation
+G = graph(A);
+A = G.adjacency;
+A_ = tril(A,-1);
+CompsC = conncomp(G,'OutputForm','cell');
+Y = cellfun(@length,CompsC);
+validC = 1:size(Y,2);
+N = max(validC);
+skipthese = zeros(1,N);
+skipthese(Y<=opt.sizethreshold) = 1;
+%%
+output_subs = cell(1,N);
+parfor mC=validC
+    % for each cluster run reconstruction
+    if skipthese(mC)
+        continue
     end
-end
-imnormfac = normfac;
-normfac = normfac*sum(dog(dog>0)); % max posible filter result will be at truncated filter
-%%
-maxIt = max(max(max(It,[],3),[],2));
-emptyimage=0;
-if 1
-    %thr = graythresh(It/maxIt)*maxIt;
-    if isempty(It(It>maxIt/20))
-        thr=0;
-        emptyimage=1;
-    else
-        thr = min(maxIt*7/10, max(maxIt/10,getThresh(It(It>maxIt/20)))); % make sure it is within [0.1 0.9]*maxIt range
-    end
-else
-    thr = maxIt/rt;
-end
-%%
-if emptyimage
-    des=[];
-else
-    % It(It<(max(It(:))/rt))=0; % slow
-    It = It.*(It>=(thr));
     %%
-    tloc = tic;
-    if 0
-        It = imregionalmax(It,26);
-        [yy,xx,zz] = ind2sub(size(It),find(It));
-    else
-        s  = regionprops(It>0, 'BoundingBox');
-        clear submax
-        for ii=1:length(s)
-            bb = s(ii).BoundingBox;
-            st = bb([2 1 3])+.5;
-            en = st+bb([5 4 6])-1;
-            if any(bb([5 4 6])<[3 3 3])
-                bb([5 4 6])
-                continue
-            end
-            It_ = It(st(1):en(1),st(2):en(2),st(3):en(3));
-            %     figure, imshow3D(It_)
-            immax = imregionalmax(It_.*double(It_>0));
-            idxmax = find(immax);
-            [iy,ix,iz] = ind2sub(size(immax),idxmax);
-            submax{ii} = ones(length(iy),1)*st+[iy(:),ix(:),iz(:)]-1;
-        end
-        localmax = cat(1,submax{:});
-        xx = localmax(:,2);
-        yy = localmax(:,1);
-        zz = localmax(:,3);
-    end
-    fprintf('Local maxima of %s in %f sec\n',inputimage,toc(tloc))
+    subidx = CompsC{mC};%find(Comps==mC);
+    subs_ = subs(subidx,:); % get back to matlab image coordinates
+    weights_ = weights(subidx);
+    nidx = length(subidx);
+    % get lower portion to make it directed
+    Asub = A_(subidx,subidx); % faster
+    leafs = find(sum(Asub,2)==0);%find(sum(max(Asub,Asub'))==1,1);
+    [eout] = graphfuncs.buildgraph(Asub,leafs(1));
     %%
-    validinds = xx>=ROI(1)&xx<=ROI(2)&yy>=ROI(3)&yy<=ROI(4)&zz>=ROI(5)&zz<=ROI(6);
-    loc = [xx(:),yy(:),zz(:)];
-    loc = loc(validinds,:);
-    desvals = double(It(sub2ind(size(It),loc(:,2),loc(:,1),loc(:,3)))); % descriptors are "0" indexed
-    %%
-    % reload input image
-    if strcmp(fileext,'.h5')
-        It = permute(squeeze(h5read(inputimage,'/exported_data')),[2 1 3]);
-    else
-        It = deployedtiffread(inputimage);
-    end
-    vals = double(It(sub2ind(size(It),loc(:,2)+1,loc(:,1)+1,loc(:,3)+1))); % intensity vals. +1 as original image is not 0 indexed
-    des = [loc desvals/normfac vals/imnormfac];
-end
+    inupdate.dA = sparse(eout(:,1),eout(:,2),1,nidx,nidx);
+    inupdate.D = ones(nidx,1);
+    inupdate.R = weights_;
+    inupdate.X = subs_(:,1);
+    inupdate.Y = subs_(:,2);
+    inupdate.Z = subs_(:,3);
 
+    deleteThese = NaN;
+    while length(deleteThese)
+        [inupdate, deleteThese] = prunTree(inupdate,100,[1 1 3]);
+    end
+    [inupdate] = smoothtree(inupdate,[]);
+    output_subs{mC} = [inupdate.X inupdate.Y inupdate.Z inupdate.R];
+end
+%%
+des = cat(1,output_subs{:});
+des(:,1:3)=des(:,1:3)-1;% descriptors are "0" indexed
+% figure, imshow(squeeze(max(double(If),[],3)),[])
+% hold on
+% scatter3(des(:,2),des(:,1),des(:,3),2*round(des(:,4)))
 %%
 if ~isempty(outputfile)
     fid = fopen(outputfile,'w');
@@ -472,76 +405,3 @@ unix(sprintf('chmod +x %s',myfile));
 fclose(fid);
 sprintf('%s',myfile)
 end
-
-% %%
-% if 0
-%     nbins = max(10,2^round(log2(length(unique(des(:,5))))-1));
-%     iThr = getThresh(des(:,5),nbins);
-%     
-%     des_ = des(des(:,5)>=iThr,:);
-%     % check uniformity
-%     %%
-%     nbins = round((dims([2 1 3])./[100 100 50]));
-%     [accArr edges ctrs] = histn(des_(:,1:3),dims([2 1 3]),nbins)
-%     %%
-%     [aa,bb] = ndgrid(edges{1},edges{2})
-%     
-%     %%
-%     figure, imshow(squeeze(max(It,[],3)),[])
-%     hold on
-%     myplot3(des_(:,1:3)+1,'ro')
-%     
-% elseif 0
-%     %%i
-%     for ithr = 0:.1:.9
-%         if sum(des(:,5)>ithr) < 5e3
-%             break
-%         end
-%     end
-%     
-%     desSorted = des(des(:,5)>ithr,:);
-%     
-%     figure, imshow(squeeze(max(It,[],3)),[])
-%     hold on
-%     myplot3(desSorted(:,1:3)+1,'.')
-%     %     myplot3(desSorted(id,1:3),'o')
-%     
-% elseif 0
-%     %% TODO: return uniform sampling over spatial domain
-%     % sort based on strength
-%     [vals,inds] = sort(des(:,5),'descend');
-%     desSorted = des(inds,:);
-%     % get decision threshold
-%     desthr = getThresh(vals);
-%     
-%     % eps-sampling
-%     Mdl = KDTreeSearcher(desSorted(:,1:3));
-%     query=rangesearch(Mdl,desSorted(:,1:3),15);
-%     
-%     keepthese = NaN(size(desSorted,1),1);
-%     for idx = 1:size(query,1)
-%         if ~isnan(keepthese(idx))
-%             continue
-%         end
-%         queidx = query{idx};
-%         keepthese(queidx(1)) = 1;
-%         keepthese(queidx(2:end)) = 0;
-%     end
-%     %
-%     id = find(keepthese);
-%     % figure, imshow(squeeze(max(It,[],3)),[0 1e3])
-%     % hold on
-%     % myplot3(desSorted(:,1:3),'.')
-%     % myplot3(desSorted(id,1:3),'o')
-% end
-% 
-% 
-% 
-
-
-
-
-
-
-
-
