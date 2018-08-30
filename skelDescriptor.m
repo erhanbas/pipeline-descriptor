@@ -33,7 +33,8 @@ if ~exist(fileparts(compiledfunc),'dir')
     mkdir(fileparts(compiledfunc));
     mfilename_ = mfilename('fullpath')
     unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
-    mytxt = sprintf('mcc -m -v %s -d %s -a %s',mfilename_,fileparts(compiledfunc),fullfile(fileparts(mfilename_),'common'));
+    mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
+    mytxt = sprintf('mcc -m -R -nojvm -v %s -d %s -a %s',mfilename_,fileparts(compiledfunc),fullfile(fileparts(mfilename_),'common'));
     unix(mytxt);
     unix(sprintf('chmod g+rwx %s',compiledfunc));
     return
