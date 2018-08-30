@@ -28,22 +28,33 @@ function varargout = skelDescriptor(inputimage,outputfile,configfile,exitcode)
 %   '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
 %
 % See also: zmatch.m
-
-% $Author: base $	$Date: 2016/09/20 14:30:14 $	$Revision: 0.1 $
-% Copyright: HHMI 2016
-if nargin<1
-    brain = '2018-08-15';
-    configfile = '/groups/mousebrainmicro/home/base/CODE/MATLAB/pipeline/pipeline-descriptor/configfiles/2018-08-15.cfg'
-    deployment(brain)
+compiledfunc = '/groups/mousebrainmicro/home/base/CODE/MATLAB/compiledfunctions/skelDescriptor/skelDescriptor';
+if ~exist(fileparts(compiledfunc),'dir')
+    mkdir(fileparts(compiledfunc));
+    mfilename_ = mfilename('fullpath')
+    unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
+    mytxt = sprintf('mcc -m -v %s -d %s -a %s',mfilename_,fileparts(compiledfunc),fullfile(fileparts(mfilename_),'common'));
+    unix(mytxt);
+    unix(sprintf('chmod g+rwx %s',compiledfunc));
     return
 end
+
+if ~isdeployed
+    addpath(genpath('./common'))
+end
+
+if nargin<1
+    inputimage = '/nrs/mouselight/pipeline_output/2018-08-15/stage_1_line_fix_output/2018-08-18/00/00466/00466-ngc.0.tif'
+    outputfile = './'
+    configfile = '/groups/mousebrainmicro/home/base/CODE/MATLAB/pipeline/pipeline-descriptor/configfiles/2018-08-15.cfg'
+    
+end
+
 if nargin < 4
     exitcode = 0;
 end
 varargout{1} = exitcode;
-tload=tic;
 [~,~,fileext] = fileparts(inputimage);
-%%
 opt = configparser(configfile);
 
 fullh = opt.fullh;
@@ -88,7 +99,7 @@ parfor mC=validC
     % get lower portion to make it directed
     Asub = A_(subidx,subidx); % faster
     leafs = find(sum(Asub,2)==0);%find(sum(max(Asub,Asub'))==1,1);
-    [eout] = graphfuncs.buildgraph(Asub,leafs(1));
+    [eout] = buildgraph(Asub,leafs(1));
     %%
     inupdate.dA = sparse(eout(:,1),eout(:,2),1,nidx,nidx);
     inupdate.D = ones(nidx,1);
@@ -113,7 +124,7 @@ des(:,1:3)=des(:,1:3)-1;% descriptors are "0" indexed
 %%
 if ~isempty(outputfile)
     fid = fopen(outputfile,'w');
-    fprintf(fid,'%d %d %d %.3f %.3f\n',des');
+    fprintf(fid,'%d %d %d %.2f\n',des');
     fclose(fid);
     unix(sprintf('chmod g+rxw %s',outputfile))
 else
@@ -142,7 +153,7 @@ elseif nargin<3
 end
 [vals,bins] = hist(double(In(:)),nbins);
 
-[x12,locmax] = max(vals);
+[~,locmax] = max(vals);
 
 % below works better if there are multiple peaks (dark pixel and background have different peaks)
 % append 0 to both sides
@@ -171,7 +182,7 @@ x0 = [bins(locmax+1:end);vals(locmax+1:end)] ;
 % make sure solution is in the convex region (this is necessary for perc
 % calculations)
 x0 = x0(:,x0(1,:)<x2(1) & x0(1,:)>x1(1));
-[maxval,maxarg,d]=dist2line(x1,x2,x0);
+[~,maxarg,~]=dist2line(x1,x2,x0);
 if numel(maxarg)
     threshold = maxarg(1);
 else
@@ -233,175 +244,3 @@ end
 
 end
 
-function deployment(brain)
-%%
-% totest from matlab window:
-% sigma1 = 3.4055002;
-% sigma2 = 4.0498447;
-%
-%% read sh file
-if 0
-    fid = fopen('/groups/mousebrainmicro/home/base/CODE/MATLAB/pipeline/descriptor/shfiles/dogdescriptorrun_2017-05-04_miss.sh');
-    tline = fgets(fid);
-    while ischar(tline)
-        inds = strfind(tline,'''');
-        C = strsplit(tline(inds(1)+1:inds(2)-1),' ');
-        siz=strjoin(C(4:6));siz=siz(2:end-1);
-        sig1=strjoin(C(7:9));sig1=sig1(2:end-1);
-        sig2=strjoin(C(10:12));sig2=sig2(2:end-1);
-        ROI=strjoin(C(13:18));ROI=ROI(2:end-1);
-        dogDescriptor(C{2},C{3},siz,sig1,sig2,ROI,C{19})
-        tline = fgets(fid);
-    end
-    fclose(fid);
-end
-%%
-% dogDescriptor('/nrs/mouselight/cluster/classifierOutputs/2017-01-15/classifier_output/2017-01-15/00/00056/00056-prob.0.h5',...
-%     'test.txt',...
-%     '[11 11 11]',...
-%     sprintf('[%f %f %f]',[3.405500 3.405500 3.405500]),...
-%     sprintf('[%f %f %f]',[4.049845 4.049845 4.049845]),...
-%     '[5 1019 5 1531 5 250]',...
-%         '4');
-%     '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-09-25/Descriptors/13844-prob.0.txt',...
-% dogDescriptor('/nobackup2/mouselight/cluster/2016-10-25/classifier_output/2016-10-27/01/01068/01068-prob.1.h5',...
-%     'test.txt',...
-%     '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1531 10 250]','4')
-
-% dogDescriptor('/groups/mousebrainmicro/mousebrainmicro/data/2016-12-05/2016-12-13/01/01783/01783-ngc.1.tif',...
-%     './05371-ngc.0.txt',...
-%     '[11 11 11]','[3.405500 3.405500 3.405500]','[4.049845 4.049845 4.049845]','[5 1019 5 1915 5 240]','4')
-%  /groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/2016-12-05/Descriptors/05374-ngc.1.txt "[11 11 11]" "[3.405500 3.405500 3.405500]" "[4.049845 4.049845 4.049845]" "[5 1019 5 1915 5 240]" 4> output.log'
-
-%%
-tag=''
-addpath(genpath('./common'))
-% brain = '2016-12-05';
-imagesiz = [1024 1536 251]
-% imagesiz = [1024 1920 241]
-if 1
-    % old
-    inputfold = '/nrs/mouselight/cluster/classifierOutputs';
-end
-
-if 1
-    args.level = 3;
-    args.ext = 'h5';
-    if 1
-        opt.inputfolder = fullfile(inputfold,sprintf('%s%s/classifier_output',brain,tag));
-    else
-        % you can also provide raw tiles for descriptors
-        opt.inputfolder = '/groups/mousebrainmicro/mousebrainmicro/data/2016-12-05'
-    end
-    opt.seqtemp = fullfile(opt.inputfolder,'listh5files')
-    if exist(opt.seqtemp, 'file') == 2
-        % load file directly
-    else
-        args.fid = fopen(opt.seqtemp,'w');
-        recdir(opt.inputfolder,args)
-    end
-end
-% outputlocation = '/groups/mousebrainmicro/mousebrainmicro/cluster/Stitching/';
-% outputfold = fullfile(outputlocation,sprintf('%s%s/Descriptors/',brain,tag));
-% % dogDescriptor(inputimage,outputfile,siz,sig1,sig2,ROI,rt)
-% mkdir(outputfold)
-% unix(sprintf('umask g+rxw %s',outputfold))
-% unix(sprintf('chmod g+rxw %s',outputfold))
-
-% fid=fopen(fullfile(inputfold,sprintf('%s/classifier_output/filelist.txt',brain)),'r');
-fid=fopen(opt.seqtemp,'r');
-inputfiles = textscan(fid,'%s');
-inputfiles = inputfiles{1};
-fclose(fid);
-%%
-if 1
-    missingfiles=ones(1,length(inputfiles));
-    % for every tif check if h5 exists
-    parfor ii=1:length(inputfiles)
-        if ~missingfiles(ii)
-            continue
-        end
-        if exist(strrep(strrep(inputfiles{ii},args.ext,'txt'),'prob','desc'),'file')
-            missingfiles(ii) = 0;
-        end
-    end
-elseif 0
-    intxt = fullfile(opt.inputfolder,'filelist.txt')
-    missingfiles = missinigFiles([brain,tag],intxt);
-else
-    missingfiles = ones(1,size(inputfiles,1));
-end
-sum(missingfiles)
-%% mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
-numcores = 4;
-pre = 'prob' % or ngc
-post = 'desc'
-rt = 4;
-myfile = fullfile(pwd,sprintf('./shfiles/dogdescriptorrun_%s%s_miss.sh',brain,tag));
-% myshfile = fullfile(experimentfolder,sprintf('cluster_ilastik_%s.sh',brain));
-
-compiledfunc = '/groups/mousebrainmicro/home/base/CODE/MATLAB/compiledfunctions/dogDescriptor/dogDescriptor'
-if 0
-    mkdir(fileparts(compiledfunc))
-    unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
-    sprintf('mcc -m -v -R -singleCompThread %s/dogDescriptor.m -d %s',pwd,fileparts(compiledfunc))
-    unix(sprintf('chmod g+rwx %s',compiledfunc))
-end
-
-%find number of random characters to choose from
-s = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-numRands = length(s);
-%specify length of random string to generate
-sLength = 10;
-ROI = [5 imagesiz(1)-5 5 imagesiz(2)-5 5 imagesiz(3)-1];
-%-o /dev/null
-esttime = 6*60;
-%%
-fid = fopen(myfile,'w');
-outputlogfold = fullfile('/groups/mousebrainmicro/mousebrainmicro/LOG',brain,'descriptor')
-mkdir(outputlogfold)
-unix(sprintf('chmod g+rwx %s',outputlogfold))
-logout=0
-vv=find(missingfiles);
-% vv(vv<25497)
-for ii=vv;%(vv<22131)%find(missingfiles)%
-    %%
-    %generate random string
-    randString = s( ceil(rand(1,sLength)*numRands) );
-    name = sprintf('dog_%05d-%s',ii,randString);
-    if 1
-        [file_path,file_name,file_ext] = fileparts(inputfiles{ii});
-        outfile = fullfile(file_path,[strrep(file_name,pre,post),'.txt']);
-    else
-        outfile = fullfile(outputfold,sprintf('%05d-%s.%d.txt',floor((ii-1)/2)+1,pre,rem(ii+1,2)));
-        %     outfile = fullfile(outputfold,sprintf('%05d-%s.%d.txt',((ii)),pre,0));
-    end
-    if 0
-        if logout
-            argsout = sprintf('''%s %s %s "[%d %d %d]" "[%f %f %f]" "[%f %f %f]" "[%d %d %d %d %d %d]" %d> %s/output-%05d.log''',compiledfunc,inputfiles{ii},outfile,...
-                11*ones(1,3),3.4055002*ones(1,3),4.0498447*ones(1,3),ROI,rt,outputlogfold,ii);
-            mysub = sprintf('qsub -pe batch %d -l d_rt=%d -N %s -j y -o %s -b y -cwd -V %s\n',numcores,esttime,name,outputlogfold,argsout);
-        else
-            argsout = sprintf('''%s %s %s "[%d %d %d]" "[%f %f %f]" "[%f %f %f]" "[%d %d %d %d %d %d]" %d''',compiledfunc,inputfiles{ii},outfile,...
-                11*ones(1,3),3.4055002*ones(1,3),4.0498447*ones(1,3),ROI,rt);
-            mysub = sprintf('qsub -pe batch %d -l d_rt=%d -N %s -j y -o %s -b y -cwd -V %s\n',numcores,esttime,name,'/dev/null',argsout);
-        end
-    else
-        if logout
-            argsout = sprintf('''%s %s %s "[%d %d %d]" "[%f %f %f]" "[%f %f %f]" "[%d %d %d %d %d %d]" %d> %s/output-%05d.log''',compiledfunc,inputfiles{ii},outfile,...
-                11*ones(1,3),3.4055002*ones(1,3),4.0498447*ones(1,3),ROI,rt,outputlogfold,ii);
-            mysub = sprintf('qsub -pe batch %d -l d_rt=%d -N %s -j y -o %s -b y -cwd -V %s\n',numcores,esttime,name,outputlogfold,argsout);
-        else
-            argsout = sprintf('''%s %s %s "[%d %d %d]" "[%f %f %f]" "[%f %f %f]" "[%d %d %d %d %d %d]" %d''',compiledfunc,inputfiles{ii},outfile,...
-                11*ones(1,3),3.4055002*ones(1,3),4.0498447*ones(1,3),ROI,rt);
-            mysub = sprintf('bsub -n%d -We %d -J %s -o %s %s\n',numcores,esttime/60,name,'/dev/null',argsout);
-        end
-    end
-%     dogDescriptor(inputfiles{ii},outfile,sprintf('[%d %d %d]',11*ones(1,3)),sprintf('[%f %f %f]',3.4055002*ones(1,3)),sprintf('[%f %f %f]',4.0498447*ones(1,3)),...
-%         sprintf('[%d %d %d %d %d %d]',ROI),sprintf('%d',rt))
-    fwrite(fid,mysub);
-end
-unix(sprintf('chmod +x %s',myfile));
-fclose(fid);
-sprintf('%s',myfile)
-end
