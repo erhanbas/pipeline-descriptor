@@ -242,6 +242,7 @@ kept_skl_ind = kept_skl_ind(kept_Q);
 kept_skl_label = kept_skl_label(kept_Q);
 
 record.exist_blv = any(large_vessel_near_boundary_Q);
+record.compute_edge = record.exist_blv || record.uneven_tile;
 descriptor_str = struct;
 descriptor_str.record = record;
 descriptor_str.skl_sub = fun_ind2sub(image_size, kept_skl_ind) - 1;
@@ -253,7 +254,7 @@ descriptor_str.skl_int = Io(kept_skl_ind);
 descriptor_str.skl_label = kept_skl_label;
 
 % If need to compute the edge of the large vessel: 
-if record.exist_blv || record.uneven_tile
+if record.compute_edge
 %     large_vessel_mask = false(image_size);
     lv_bbox_min = inf(1,3);
     lv_bbox_max = zeros(1,3);
@@ -285,9 +286,9 @@ if record.exist_blv || record.uneven_tile
     ind_2 = sub2ind(image_size, edge_sub(:,1), edge_sub(:,2), min(edge_sub(:,3) + 1, valid_sub_max(3)));
     edge_grad = sqrt(edge_grad + double(Io(ind_2) - Io(ind_1)).^2); 
     % Record the large vessel bounadry subscripts and gradient. 
-    descriptor_str.blv_sub = edge_sub - 1;
-    descriptor_str.blv_sub(:,[1,2]) = descriptor_str.blv_sub(:,[2,1]);
-    descriptor_str.blv_gradient = edge_grad;
+    descriptor_str.edge_sub = edge_sub - 1;
+    descriptor_str.edge_sub(:,[1,2]) = descriptor_str.edge_sub(:,[2,1]);
+    descriptor_str.edge_gradient = edge_grad;
 end
 
 %% Oputput descriptor
