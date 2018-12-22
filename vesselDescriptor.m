@@ -144,8 +144,9 @@ block_with_mask_ind = find(Io_block_with_mask);
 block_with_mask_sub = zeros(numel(block_with_mask_ind), 3);
 [block_with_mask_sub(:,1), block_with_mask_sub(:,2), block_with_mask_sub(:,3)] = ind2sub(Io_block_grid_size, block_with_mask_ind);
 mask_center_of_mass = mean(block_with_mask_sub, 1);
-abs_center_of_mass_deviation = abs(mask_center_of_mass - Io_block_grid_size/2)./(Io_block_grid_size/2);
-if any(abs_center_of_mass_deviation > 0.25)
+center_of_mass_deviation = (mask_center_of_mass - Io_block_grid_size/2)./(Io_block_grid_size/2);
+record.center_of_mass_deviation = center_of_mass_deviation;
+if any(abs(center_of_mass_deviation) > 0.25)
     record.uneven_tile = true;
 else
     record.uneven_tile = false;
