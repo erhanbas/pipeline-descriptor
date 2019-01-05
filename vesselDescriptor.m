@@ -90,6 +90,9 @@ else
 end
 image_size = size(Io);
 raw_voxel_size = [0.2969, 0.3758, 1.0000];
+descriptor_str = struct;
+[descriptor_str.record, descriptor_str.skl_sub, descriptor_str.skl_r, descriptor_str.skl_int, ...
+    descriptor_str.skl_label, descriptor_str.edge_sub, descriptor_str.edge_gradient] = deal([]);
 %% Rough segmentation and skeletonization
 opt.thr = 15e3;
 opt.sizethreshold = 100;
@@ -141,6 +144,9 @@ Io_block_with_mask = fun_downsample_by_block_operation(Io_mask, @any, [64,64,18]
 Io_block_grid_size = size(Io_block_with_mask);
 % How to check the unevenness of the data? 
 block_with_mask_ind = find(Io_block_with_mask);
+if ~any(block_with_mask_ind)
+    return;
+end
 block_with_mask_sub = zeros(numel(block_with_mask_ind), 3);
 [block_with_mask_sub(:,1), block_with_mask_sub(:,2), block_with_mask_sub(:,3)] = ind2sub(Io_block_grid_size, block_with_mask_ind);
 mask_center_of_mass = mean(block_with_mask_sub, 1);
@@ -169,6 +175,9 @@ end
 %% Convert skeleton to links and nodes
 % Convert the skeleton into edges and nodes
 vessel_graph = fun_skeleton_to_link_segments(skel);
+if vessel_graph.link.num_cc == 0
+    return;
+end
 % Check if very large vessels are present
 % Get the radius list for each each link 
 vessel_graph.link.cc_r = cell(vessel_graph.link.num_cc, 1);
@@ -190,6 +199,8 @@ end
 vessel_graph.link.avg_r = cellfun(@mean, vessel_graph.link.cc_r);
 vessel_graph.link.std_r = cellfun(@std, vessel_graph.link.cc_r);
 vessel_graph.link.med_r = cellfun(@median, vessel_graph.link.cc_r);
+vessel_graph.link.max_r = cellfun(@max, vessel_graph.link.cc_r);
+vessel_graph.link.min_r = cellfun(@min, vessel_graph.link.cc_r);
 
 vessel_graph.link.avg_int = cellfun(@mean, vessel_graph.link.cc_int);
 vessel_graph.link.std_int = cellfun(@std, vessel_graph.link.cc_int);
@@ -205,7 +216,8 @@ vessel_graph.link.SNR_int = (vessel_graph.link.avg_int - bg_mean)./bg_std;
 long_vessel_Q = vessel_graph.link.length > opt.vessel_length_th;
 large_vessel_Q = vessel_graph.link.med_r > opt.large_vessel_radius_min;
 strong_varying_vessel_Q = vessel_graph.link.std_r > opt.vessel_radius_max_std;
-kept_link_Q = long_vessel_Q & ~strong_varying_vessel_Q & ~large_vessel_Q;
+hair_skeleton_Q = vessel_graph.link.length < vessel_graph.link.max_r;
+kept_link_Q = long_vessel_Q & ~strong_varying_vessel_Q & ~large_vessel_Q & ~hair_skeleton_Q;
 
 %% Check if there are large vessels near the boundary
 % For intermediate size of vessels (of radius less than 10 um ), the
@@ -244,7 +256,7 @@ kept_skl_label = kept_skl_label(kept_Q);
 
 record.exist_blv = any(large_vessel_near_boundary_Q);
 record.compute_edge = record.exist_blv || record.uneven_tile;
-descriptor_str = struct;
+
 descriptor_str.record = record;
 descriptor_str.skl_sub = fun_ind2sub(image_size, kept_skl_ind) - 1;
 % The matching use the physical x y z coordinate, so the first two column
@@ -291,6 +303,12 @@ if record.compute_edge
     descriptor_str.edge_sub(:,[1,2]) = descriptor_str.edge_sub(:,[2,1]);
     descriptor_str.edge_gradient = edge_grad;
 end
+%% Debug
+% DataManager = FileManager;
+% vis_mask = uint8(Io_mask);
+% vis_mask(kept_skl_ind) = 2;
+% vis_mask(sub2ind(size(Io), edge_sub(:,1), edge_sub(:,2), edge_sub(:,3))) = 3;
+% DataManager.visualize_itksnap(Io, vis_mask);
 
 %% Oputput descriptor
 % descriptor_str(:,[1,2]) = descriptor_str(:,[2,1]);
