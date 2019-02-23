@@ -1,25 +1,26 @@
  function varargout = vesselDescriptor(inputimage,outputfile,configfile,exitcode)
+%%
 % vesselDescriptor extracts descriptors from the input image:
 % 1. The mask is estimated by adaptive intensity based thresholding. The
 % center of mass of the mask is computed to determine if the mask is evenly
 % distributed across the tile. If no, step 4 is executed even if there is
 % no large vessels near the boundary of the tile.
-
+%
 % 2. Convert the mask into skeleton. 2D Euclidean distance transform is
 % applied to each section of the mask to estiamte the vessel radius. 
-
+%
 % 3. Convert skeleton to edges, various criteria are applied for selecting
 % stable and long edges as descriptor. 
-
+%
 % 4. Based on the edge position and distance transform, the existance of
 % large vessels can be estimated. If they exist in the input image, the 3D
 % Canny edge detector is applied to compute the edge of the entire image.
 % Both the edge voxel position (in x,y,z, consistent with the microscope
 % coordinate) and the magnidute of the edge voxel gradient ( computed by
 % central difference) are also recorded as descriptor. 
-
+%
 % 5. Write descriptors structure. 
-
+%
 % Input: 
 %   inputimage: string, directory of the input image
 %   outputfile: string, directory of the output MATLAB structure
@@ -49,25 +50,24 @@
 % Modified from Erhan Bas's sklDescriptor by Xiang Ji (xiangji.ucsd@gmail.com)
 % Date: Dec 12, 2018
 
-
 %% Using complied files
-% compiledfunc = '/home/dklab/Documents/Github/MouseLight/compiledfunctions/skelDescriptor/skelDescriptor';
-% if ~exist(fileparts(compiledfunc),'dir')
-%     mkdir(fileparts(compiledfunc));
-%     mfilename_ = mfilename('fullpath');
-%     unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
-% %     mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
-%     mytxt = sprintf('mcc -m -R -nojvm -v %s -d %s -a %s',mfilename_,fileparts(compiledfunc),fullfile(fileparts(mfilename_),'common'));
-%     unix(mytxt);
-%     unix(sprintf('chmod g+rwx %s',compiledfunc));
-%     return
-% end
+compiledfunc = '/groups/mousebrainmicro/home/jix/Documents/GitHub/compiledfunctions/vesselDescriptor/vesselDescriptor';
+if ~exist(fileparts(compiledfunc),'dir')
+    mkdir(fileparts(compiledfunc));
+    mfilename_ = mfilename('fullpath');
+    unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
+%     mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
+    mytxt = sprintf('mcc -m -R -nojvm -v %s -d %s -a %s',mfilename_,fileparts(compiledfunc),fullfile(fileparts(mfilename_),'common'));
+    unix(mytxt);
+    unix(sprintf('chmod g+rwx %s',compiledfunc));
+    return
+end
 
 % if ~isdeployed
 %     addpath(genpath('./common'))
 % end
 
-% if nargin<1
+% if nargin < 1
 %     inputimage = '/data/Vessel/ML_stitching/4_15_59_cube/raw_data/2018-08-23/01/01665/01665-ngc.0.tif';
 %     outputfile = './';
 %     configfile = '/groups/mousebrainmicro/home/base/CODE/MATLAB/pipeline/pipeline-descriptor/configfiles/2018-08-15.cfg';
@@ -76,7 +76,7 @@
 if nargin < 4
     exitcode = 0;
 end
-% varargout{1} = exitcode;
+varargout{1} = exitcode;
 
 record = struct;
 
@@ -316,13 +316,6 @@ if record.compute_edge
         descriptor_str.edge_gradient = edge_grad;
     end
 end
-%% Debug
-% DataManager = FileManager;
-% vis_mask = uint8(Io_mask);
-% vis_mask(kept_skl_ind) = 2;
-% vis_mask(sub2ind(size(Io), edge_sub(:,1), edge_sub(:,2), edge_sub(:,3))) = 3;
-% DataManager.visualize_itksnap(Io, vis_mask);
-
 %% Oputput descriptor
 % descriptor_str(:,[1,2]) = descriptor_str(:,[2,1]);
 % descriptor_str(:,1:3)=descriptor_str(:,1:3)-1;% descriptors are "0" indexed
