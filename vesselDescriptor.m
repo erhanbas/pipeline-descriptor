@@ -51,21 +51,21 @@
 % Date: Dec 12, 2018
 
 %% Using complied files
-compiledfunc = '/groups/mousebrainmicro/home/jix/Documents/GitHub/compiledfunctions/vesselDescriptor/vesselDescriptor';
-if ~exist(fileparts(compiledfunc),'dir')
-    mkdir(fileparts(compiledfunc));
-    mfilename_ = mfilename('fullpath');
-    unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
-%     mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
-    mytxt = sprintf('mcc -m -R -nojvm -v %s -d %s -a %s',mfilename_,fileparts(compiledfunc),fullfile(fileparts(mfilename_),'compile_functions'));
-    unix(mytxt);
-    unix(sprintf('chmod g+rwx %s',compiledfunc));
-    return
-end
+% compiledfunc = '/groups/mousebrainmicro/home/jix/Documents/GitHub/compiledfunctions/vesselDescriptor/vesselDescriptor';
+% if ~exist(fileparts(compiledfunc),'dir')
+%     mkdir(fileparts(compiledfunc));
+%     mfilename_ = mfilename('fullpath');
+%     unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
+% %     mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
+%     mytxt = sprintf('mcc -m -R -nojvm -v %s -d %s -a %s',mfilename_,fileparts(compiledfunc),fullfile(fileparts(mfilename_),'compile_functions'));
+%     unix(mytxt);
+%     unix(sprintf('chmod g+rwx %s',compiledfunc));
+%     return
+% end
 
-if ~isdeployed
-    addpath(genpath('./compile_functions'))
-end
+% if ~isdeployed
+%     addpath(genpath('./compile_functions'))
+% end
 
 % if nargin < 1
 %     inputimage = '/data/Vessel/ML_stitching/4_15_59_cube/raw_data/2018-08-23/01/01665/01665-ngc.0.tif';
@@ -316,6 +316,13 @@ if record.compute_edge
         descriptor_str.edge_gradient = edge_grad;
     end
 end
+%% Debug and visualization
+% Io_raw = deployedtiffread(inputimage);
+% DataManager = FileManager;
+% vis_mask = uint8(Io_mask);
+% vis_mask(kept_skl_ind) = 2;
+% vis_mask(sub2ind(image_size, edge_sub(:,1), edge_sub(:,2), edge_sub(:,3))) = 3;
+% DataManager.visualize_itksnap(Io_raw, vis_mask);
 %% Oputput descriptor
 % descriptor_str(:,[1,2]) = descriptor_str(:,[2,1]);
 % descriptor_str(:,1:3)=descriptor_str(:,1:3)-1;% descriptors are "0" indexed
