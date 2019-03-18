@@ -49,7 +49,6 @@
 % 
 % Modified from Erhan Bas's sklDescriptor by Xiang Ji (xiangji.ucsd@gmail.com)
 % Date: Dec 12, 2018
-
 %% Using complied files
 % compiledfunc = '/groups/mousebrainmicro/home/jix/Documents/GitHub/compiledfunctions/vesselDescriptor/vesselDescriptor';
 % if ~exist(fileparts(compiledfunc),'dir')
@@ -62,20 +61,13 @@
 %     unix(sprintf('chmod g+rwx %s',compiledfunc));
 %     return
 % end
-
 % if ~isdeployed
 %     addpath(genpath('./compile_functions'))
 % end
-
-% if nargin < 1
-%     inputimage = '/data/Vessel/ML_stitching/4_15_59_cube/raw_data/2018-08-23/01/01665/01665-ngc.0.tif';
-%     outputfile = './';
-%     configfile = '/groups/mousebrainmicro/home/base/CODE/MATLAB/pipeline/pipeline-descriptor/configfiles/2018-08-15.cfg';
-% end
-
 if nargin < 4
     exitcode = 0;
 end
+debug_mode = false;
 varargout{1} = exitcode;
 
 record = struct;
@@ -93,13 +85,16 @@ raw_voxel_size = [0.2969, 0.3758, 1.0000];
 descriptor_str = struct;
 [descriptor_str.record, descriptor_str.skl_sub, descriptor_str.skl_r, descriptor_str.skl_int, ...
     descriptor_str.skl_label, descriptor_str.edge_sub, descriptor_str.edge_gradient] = deal([]);
-save(outputfile, '-struct', 'descriptor_str');
-varargout{1} = descriptor_str;
+if ~debug_mode
+    save(outputfile, '-struct', 'descriptor_str');
+end
+varargout{2} = descriptor_str;
 %% Rough segmentation and skeletonization
-opt.thr = 15e3;
+opt.thr = 12e3; % This is an emperical number. 12e3 is not very save since the background mean is about 11e3 and std is about 125;
 opt.sizethreshold = 100;
 opt.anisotropy = [1.5, 1.5, 0.5];
 oth.canny_th = [0.1, 0.3];
+opt.canny_int_th = 12e3;
 opt.vessel_radius_max_std = 2; % in micron
 opt.large_vessel_radius_min = 10; % in micron
 opt.vessel_length_th = 10; % in micron
@@ -122,6 +117,7 @@ Io = medfilt3(Io);
 Io = imgaussfilt3(Io, opt.anisotropy);
 % Threshold by max-pooling
 Io_th = fun_downsample_by_block_operation(Io, @max, [32,32,4], true);
+record.int_max = max(Io_th(:));
 Io_th = max(Io_th * opt.max_threshold_ratio, opt.thr);
 Io_th = imresize3(Io_th, image_size);
 Io_mask = Io > Io_th;
@@ -293,8 +289,12 @@ descriptor_str.record = record;
 % If need to compute the edge of the large vessel: 
 if record.compute_edge
 %     large_vessel_mask = false(image_size);
-    Io_edge = edge3(Io, 'approxcanny', oth.canny_th);
-    edge_ind = find(Io_edge);
+    if record.mask_volume_ratio >= (1000 / prod(image_size))
+        Io_edge = edge3(Io, 'approxcanny', oth.canny_th);
+        edge_ind = find(Io_edge);
+    else
+        edge_ind = [];
+    end
     if ~isempty(edge_ind) 
         edge_sub = fun_ind2sub(image_size, edge_ind);
         kept_Q = all(bsxfun(@ge, edge_sub, valid_sub_min) & bsxfun(@le, edge_sub, valid_sub_max),2);
@@ -314,15 +314,14 @@ if record.compute_edge
         descriptor_str.edge_sub = edge_sub - 1;
         descriptor_str.edge_sub(:,[1,2]) = descriptor_str.edge_sub(:,[2,1]);
         descriptor_str.edge_gradient = edge_grad;
-    end
+    end    
 end
 %% Debug and visualization
-% Io_raw = deployedtiffread(inputimage);
-% DataManager = FileManager;
-% vis_mask = uint8(Io_mask);
-% vis_mask(kept_skl_ind) = 2;
-% vis_mask(sub2ind(image_size, edge_sub(:,1), edge_sub(:,2), edge_sub(:,3))) = 3;
-% DataManager.visualize_itksnap(Io_raw, vis_mask);
+% ori_str = load(outputfile);
+% figure;
+% scatter3(descriptor_str.skl_sub(:,2), descriptor_str.skl_sub(:, 1), descriptor_str.skl_sub(:,3));
+% hold on 
+% scatter3(ori_str.skl_sub(:,2), ori_str.skl_sub(:,1), ori_str.skl_sub(:,3));
 %% Oputput descriptor
 % descriptor_str(:,[1,2]) = descriptor_str(:,[2,1]);
 % descriptor_str(:,1:3)=descriptor_str(:,1:3)-1;% descriptors are "0" indexed
