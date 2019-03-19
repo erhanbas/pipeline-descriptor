@@ -67,7 +67,7 @@
 if nargin < 4
     exitcode = 0;
 end
-debug_mode = false;
+debug_mode = true;
 varargout{1} = exitcode;
 
 record = struct;
@@ -90,7 +90,9 @@ if ~debug_mode
 end
 varargout{2} = descriptor_str;
 %% Rough segmentation and skeletonization
-opt.thr = 12e3; % This is an emperical number. 12e3 is not very save since the background mean is about 11e3 and std is about 125;
+% There's no easy fix for the bubble in front of the objective. Intensity
+% threshold 12000 is too low for some of the image tiles.
+opt.thr = 15e3; 
 opt.sizethreshold = 100;
 opt.anisotropy = [1.5, 1.5, 0.5];
 oth.canny_th = [0.1, 0.3];
@@ -322,6 +324,9 @@ end
 % scatter3(descriptor_str.skl_sub(:,2), descriptor_str.skl_sub(:, 1), descriptor_str.skl_sub(:,3));
 % hold on 
 % scatter3(ori_str.skl_sub(:,2), ori_str.skl_sub(:,1), ori_str.skl_sub(:,3));
+% edge_skl_mask = false(size(Io));
+% edge_skl_mask([edge_ind;kept_skl_ind]) = true;
+% implay(edge_skl_mask);
 %% Oputput descriptor
 % descriptor_str(:,[1,2]) = descriptor_str(:,[2,1]);
 % descriptor_str(:,1:3)=descriptor_str(:,1:3)-1;% descriptors are "0" indexed
