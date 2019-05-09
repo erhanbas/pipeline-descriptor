@@ -50,20 +50,20 @@
 % Modified from Erhan Bas's sklDescriptor by Xiang Ji (xiangji.ucsd@gmail.com)
 % Date: Dec 12, 2018
 %% Using complied files
-% compiledfunc = '/groups/mousebrainmicro/home/jix/Documents/GitHub/compiledfunctions/vesselDescriptor/vesselDescriptor';
-% if ~exist(fileparts(compiledfunc),'dir')
-%     mkdir(fileparts(compiledfunc));
-%     mfilename_ = mfilename('fullpath');
-%     unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
-% %     mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
-%     mytxt = sprintf('mcc -m -R -nojvm -v %s -d %s -a %s',mfilename_,fileparts(compiledfunc),fullfile(fileparts(mfilename_),'compile_functions'));
-%     unix(mytxt);
-%     unix(sprintf('chmod g+rwx %s',compiledfunc));
-%     return
-% end
-% if ~isdeployed
-%     addpath(genpath('./compile_functions'))
-% end
+compiledfunc = '/groups/mousebrainmicro/home/jix/Documents/GitHub/compiledfunctions/vesselDescriptor/vesselDescriptor';
+if ~exist(fileparts(compiledfunc),'dir')
+    mkdir(fileparts(compiledfunc));
+    mfilename_ = mfilename('fullpath');
+    unix(sprintf('umask g+rxw %s',fileparts(compiledfunc)))
+%     mcc -m -R -nojvm -v <function.m> -d <outfolder/>  -a <addfolder>
+    mytxt = sprintf('mcc -m -R -nojvm -v %s -d %s -a %s',mfilename_,fileparts(compiledfunc),fullfile(fileparts(mfilename_),'compile_functions'));
+    unix(mytxt);
+    unix(sprintf('chmod g+rwx %s',compiledfunc));
+    return
+end
+if ~isdeployed
+    addpath(genpath('./compile_functions'))
+end
 if nargin < 4
     exitcode = 0;
 end
@@ -84,7 +84,7 @@ image_size = size(Io);
 raw_voxel_size = [0.2969, 0.3758, 1.0000];
 descriptor_str = struct;
 [descriptor_str.record, descriptor_str.skl_sub, descriptor_str.skl_r, descriptor_str.skl_int, ...
-    descriptor_str.skl_label, descriptor_str.edge_sub, descriptor_str.edge_gradient] = deal([]);
+    descriptor_str.skl_label, descriptor_str.edge_sub, descriptor_str.edge_gradient, descriptor_str.edge_int] = deal([]);
 if ~debug_mode
     save(outputfile, '-struct', 'descriptor_str');
 end
@@ -97,6 +97,7 @@ opt.sizethreshold = 100;
 opt.anisotropy = [1.5, 1.5, 0.5];
 oth.canny_th = [0.1, 0.3];
 opt.canny_int_th = 12e3;
+opt.est_bg_int = 11.5e3;
 opt.vessel_radius_max_std = 2; % in micron
 opt.large_vessel_radius_min = 10; % in micron
 opt.vessel_length_th = 10; % in micron
@@ -104,14 +105,15 @@ opt.max_threshold_ratio = 0.5;
 opt.small_vessel_radius_max = 3; % in micron
 opt.low_SNR_ratio = 5;
 % The starting section in Z should probably be increased. 
-valid_sub_min = [8, 45, 9];
-valid_sub_max = [1529, 986, 251];
+valid_sub_min = min([8, 45, 9], image_size);
+valid_sub_max = min([1529, 986, 251], image_size);
 record.opt = opt;
+record.image_size = image_size;
 record.valid_bbox_mmxx = [valid_sub_min, valid_sub_max];
 record.fp_image = inputimage;
 record.fp_descriptor = outputfile;
 record.raw_image_size = image_size;
-
+%%
 Io = medfilt3(Io);
 % Anisotropic gaussian filter. This is faster than convn since the 3D gaussian
 % kernel with diagonal covariance matrix can be decomposed into three 1D
@@ -120,8 +122,8 @@ Io = imgaussfilt3(Io, opt.anisotropy);
 % Threshold by max-pooling
 Io_th = fun_downsample_by_block_operation(Io, @max, [32,32,4], true);
 record.int_max = max(Io_th(:));
-Io_th = max(Io_th * opt.max_threshold_ratio, opt.thr);
-Io_th = imresize3(Io_th, image_size);
+Io_th = (Io_th - opt.est_bg_int) * opt.max_threshold_ratio + opt.est_bg_int;
+Io_th = max(imresize3(Io_th, image_size), opt.thr);
 Io_mask = Io > Io_th;
 bg_std = std(single(Io(~Io_mask)));
 bg_mean = mean(Io(~Io_mask));
@@ -180,7 +182,7 @@ end
 if ~isempty(vessel_graph) && vessel_graph.link.num_cc > 0
     vessel_graph.link.cc_r = cell(vessel_graph.link.num_cc, 1);
     vessel_graph.link.cc_int = cell(vessel_graph.link.num_cc, 1);
-    vessel_graph.link.cc_sub = cell(vessel_graph.link.num_cc, 1);
+    vessel_graph.link.cc_sub_um = cell(vessel_graph.link.num_cc, 1);
     vessel_graph.link.length = zeros(vessel_graph.link.num_cc, 1);
     for idx = 1 : vessel_graph.link.num_cc
         vessel_graph.link.cc_r{idx} = Io_mask_dt(vessel_graph.link.cc_ind{idx});
@@ -300,6 +302,7 @@ if record.compute_edge
     if ~isempty(edge_ind) 
         edge_sub = fun_ind2sub(image_size, edge_ind);
         kept_Q = all(bsxfun(@ge, edge_sub, valid_sub_min) & bsxfun(@le, edge_sub, valid_sub_max),2);
+        edge_ind = edge_ind(kept_Q, :);
         edge_sub = edge_sub(kept_Q,:);
         
         % Compute the gradient for the selected edge voxels:
@@ -307,7 +310,7 @@ if record.compute_edge
         ind_2 = sub2ind(image_size, min(edge_sub(:,1) + 1, valid_sub_max(1)), edge_sub(:,2), edge_sub(:,3));
         edge_grad = double(Io(ind_2) - Io(ind_1)).^2;
         ind_1 = sub2ind(image_size, edge_sub(:,1), max(edge_sub(:,2) - 1, valid_sub_min(2)), edge_sub(:,3));
-        ind_2 = sub2ind(image_size, edge_sub(:,1), max(edge_sub(:,2) + 1, valid_sub_max(2)), edge_sub(:,3));
+        ind_2 = sub2ind(image_size, edge_sub(:,1), min(edge_sub(:,2) + 1, valid_sub_max(2)), edge_sub(:,3));
         edge_grad = edge_grad + double(Io(ind_2) - Io(ind_1)).^2;
         ind_1 = sub2ind(image_size, edge_sub(:,1), edge_sub(:,2), max(edge_sub(:,3) - 1, valid_sub_min(3)));
         ind_2 = sub2ind(image_size, edge_sub(:,1), edge_sub(:,2), min(edge_sub(:,3) + 1, valid_sub_max(3)));
@@ -316,6 +319,7 @@ if record.compute_edge
         descriptor_str.edge_sub = edge_sub - 1;
         descriptor_str.edge_sub(:,[1,2]) = descriptor_str.edge_sub(:,[2,1]);
         descriptor_str.edge_gradient = edge_grad;
+        descriptor_str.edge_int = Io(edge_ind);
     end    
 end
 %% Debug and visualization
@@ -337,8 +341,8 @@ if ~isempty(outputfile)
         fid = fopen(outputfile,'w');
         fprintf(fid,'%d %d %d %f\n',descriptor_str');
         fclose(fid);
-        unix(sprintf('chmod g+rxw %s',outputfile))
     end
+    unix(sprintf('chmod g+rxw %s',outputfile))
 end
 % if nargout > 1
 %     varargout{2} = descriptor_str;
